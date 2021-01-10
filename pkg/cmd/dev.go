@@ -13,21 +13,27 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package main
+package cmd
 
 import (
-	"github.com/spf13/pflag"
-	"github.com/warm-metal/kubectl-dev/pkg/cmd"
+	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"os"
 )
 
-func main() {
-	flags := pflag.NewFlagSet("kubectl-dev", pflag.ExitOnError)
-	pflag.CommandLine = flags
+func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
+	var devCmd = &cobra.Command{
+		Use:   "kubectl-dev",
+		Short: "kubectl plugin to support development on k8s",
+		Long: `Debug workloads or images. For example:
 
-	root := cmd.NewCmdDev(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
-	if err := root.Execute(); err != nil {
-		os.Exit(1)
+kubectl dev debug po failed-po-name
+
+kubectl dev debug deploy deploy-name
+
+kubectl dev debug docker.io/warmmetal/image:label`,
 	}
+
+	devCmd.AddCommand(NewDebugDev(streams))
+
+	return devCmd
 }
