@@ -13,29 +13,26 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package cmd
+package build
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/warm-metal/kubectl-dev/pkg/cmd/build"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
-func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
-	var devCmd = &cobra.Command{
-		Use:   "kubectl-dev",
-		Short: "kubectl plugin to support development on k8s",
-		Long: `Debug workloads or images. For example:
-
-kubectl dev debug po failed-po-name
-
-kubectl dev debug deploy deploy-name
-
-kubectl dev debug docker.io/warmmetal/image:label`,
+func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
+	var cmd = &cobra.Command{
+		Use: "build",
+		Short: "Build container image using Dockerfile",
+		Long: `Build images in clusters and share arguments and options with the "docker build" command.
+"kubectl-dev build" use buildkitd as its build engine. Since buildkitd only support containerd or oci 
+as its worker, the build command also only support containerd as the container runtime.`,
+		Example: ``,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
 	}
 
-	devCmd.AddCommand(NewCmdDebug(streams))
-	devCmd.AddCommand(build.NewCmd(streams))
-
-	return devCmd
+	cmd.AddCommand(newCmdInstall(streams))
+	return cmd
 }

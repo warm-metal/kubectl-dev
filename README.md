@@ -12,3 +12,16 @@ If you have golang toolchains, run
 ```go
 go install github.com/warm-metal/kubectl-dev
 ```
+
+## Usage
+
+```bash
+# Debug the Deployment named workload
+kubectl dev debug deploy workload
+
+# Install build toolchains
+kubectl dev build install
+
+# Build an image
+kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .
+```

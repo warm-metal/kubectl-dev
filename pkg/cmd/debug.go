@@ -19,11 +19,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
-	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -34,7 +33,6 @@ import (
 	"k8s.io/client-go/scale/scheme/extensionsv1beta1"
 	"k8s.io/client-go/tools/clientcmd/api"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -47,8 +45,9 @@ type DebugOptions struct {
 	genericclioptions.IOStreams
 	rawConfig api.Config
 
-	debugBaseImage string
-	container      string
+	debugBaseImage   string
+	container        string
+	installCSIDriver bool
 
 	id          string
 	instance    string
@@ -78,6 +77,17 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("must specify a kind and an object, or an image. See the usage")
 	}
 
+	if o.installCSIDriver {
+		const manifest = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd-minikube.yaml"
+		if err := kubectl.DeleteManifests(manifest); err != nil {
+			return err
+		}
+
+		if err := kubectl.ApplyManifests(manifest); err != nil {
+			return err
+		}
+	}
+
 	if len(args) == 1 {
 		o.image = args[0]
 		o.instance = fmt.Sprintf("debugger-image-%s", o.id)
@@ -85,6 +95,12 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 			"debugger.warm-metal.tech/image": "",
 		}
 		return nil
+	}
+
+	o.instance = fmt.Sprintf("debugger-%s-%s-%s", args[0], args[1], o.id)
+	o.labels = map[string]string{
+		"debugger.warm-metal.tech/kind": args[0],
+		"debugger.warm-metal.tech/name": args[1],
 	}
 
 	result := resource.NewBuilder(o.configFlags).
@@ -252,7 +268,9 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// FIXME remove probes
 	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
+		o.podTmpl = podTmpl
 		return nil
 	}
 
@@ -277,34 +295,10 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	o.instance = fmt.Sprintf("debugger-%s-%s-%s", args[0], args[1], o.id)
-	o.labels = map[string]string{
-		"debugger.warm-metal.tech/kind": args[0],
-		"debugger.warm-metal.tech/name": args[1],
-	}
 	return nil
 }
 
 func (o *DebugOptions) Validate() error {
-	config, err := o.configFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
-	}
-
-	if _, err = clientset.StorageV1().CSIDrivers().Get(context.TODO(), csiDriverName, metav1.GetOptions{}); err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf(
-				`CSI driver "%s" is required. See https://github.com/warm-metal/csi-driver-image`, csiDriverName)
-		}
-
-		return err
-	}
-
 	if len(o.image) == 0 && o.podTmpl == nil {
 		err := fmt.Errorf("an image or object is required. See the usage")
 		return err
@@ -354,11 +348,12 @@ func (o *DebugOptions) Run() error {
 	container.Image = o.debugBaseImage
 	args := append(container.Command, container.Args...)
 	container.Command = nil
-	container.Args = nil
+	container.Args = []string{"tail", "-f", "/dev/null"}
 	container.Env = append(container.Env, corev1.EnvVar{
 		Name:  "IMAGE_ARGS",
 		Value: strings.Join(args, " "),
 	})
+	container.Stdin = true
 
 	volume := corev1.Volume{
 		Name: fmt.Sprintf("debugger-image-%s", o.id),
@@ -406,53 +401,43 @@ func (o *DebugOptions) Run() error {
 		return err
 	}
 
-	defer watcher.Stop()
 	for {
 		ev := <-watcher.ResultChan()
 
 		if ev.Type != watch.Modified && ev.Type != watch.Added {
+			watcher.Stop()
 			return fmt.Errorf("the new pod can start, %#v", ev)
 		}
 
-		if utils.IsPodReady(ev.Object.(*corev1.Pod)) {
+		if ev.Object.(*corev1.Pod).Status.Phase == corev1.PodRunning {
 			break
 		}
 	}
 
-	cmd := exec.Command("kubectl", []string{
-		"exec",
-		"-ti",
-		"-n", pod.Namespace,
-		pod.Name,
-		"-c", container.Name,
-		"--", "bash",
-	}...)
+	watcher.Stop()
 
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	if err = cmd.Run(); err != nil {
+	defer func() {
 		if err = clientset.CoreV1().Pods(ns).Delete(context.TODO(), newPod.Name, metav1.DeleteOptions{}); err != nil {
 			fmt.Fprintf(os.Stderr, "can't delete the pod debugger: %s\n", err)
 		}
-	}
+	}()
 
-	return nil
+	return kubectl.Exec(newPod.Name, newPod.Namespace, container.Name, "bash")
 }
 
-func NewDebugDev(streams genericclioptions.IOStreams) *cobra.Command {
+func NewCmdDebug(streams genericclioptions.IOStreams) *cobra.Command {
 	o := NewDebugOptions(streams)
 
 	var debugCmd = &cobra.Command{
 		Use:   "debug",
-		Short: "debug running or failed workloads or just images",
+		Short: "Debug running or failed workloads or images",
 		Long: `The image of the target workload will be mounted to a new Pod. You will see all original configurations 
 even the filesystem in the new Pod, except the same entrypoint.
 `,
-		Example: `Debug a running workload whether if failed or not.
+		Example: `#Debug a running workload whether if failed or not.
 kubectl dev debug deploy name
 
+# 
 kubectl dev debug pod name
 
 kubectl dev debug ds name
@@ -461,11 +446,11 @@ kubectl dev debug job name
 
 kubectl dev debug cronjob name
 
-kubectl dev debug statefulset name
+kubectl dev debug sts name
 
 kubectl dev debug rs name
 
-Debug an image.
+#Debug an image.
 kubectl dev debug image-name
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -484,10 +469,13 @@ kubectl dev debug image-name
 	}
 
 	debugCmd.Flags().StringVar(
-		&o.debugBaseImage, "base", o.debugBaseImage, "Base image used to mount target images")
+		&o.debugBaseImage, "base", o.debugBaseImage,
+		`Base image used to mount the target image. "bash" is required in the base image`)
 	debugCmd.Flags().StringVarP(
 		&o.container, "container", "c", o.container,
 		"Container of the specified object if in which there are multiple containers")
+	debugCmd.Flags().BoolVar(&o.installCSIDriver, "also-apply-csi-driver", false,
+		`Apply the CSI driver "https://github.com/warm-metal/csi-driver-image". The driver is required. If you already have it installed, turn it off.`)
 
 	o.configFlags.AddFlags(debugCmd.Flags())
 
