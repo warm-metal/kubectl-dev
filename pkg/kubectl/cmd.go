@@ -1,23 +1,23 @@
 package kubectl
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
 
-func run(args ...string) error {
+func runWithIO(args ...string) error {
 	cmd := exec.Command("kubectl", args...)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
-	err := cmd.Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, `fail to run "%s": %s\n`, strings.Join(args, " "), err)
-	}
+	return cmd.Run()
+}
 
-	return err
+func run(args ...string) error {
+	// FIXME save all outputs to the popout error
+	cmd := exec.Command("kubectl", args...)
+	cmd.Env = os.Environ()
+	return cmd.Run()
 }

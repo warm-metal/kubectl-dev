@@ -2,8 +2,8 @@
 
 **kubectl-dev** is a kubectl plugin to support development activities on k8s.
 
-We want to move all your development activities, image building, debugging, as well as deps resolving,
-all of them into k8s clusters. You don't need to install many runtime and many more versions of them in your laptop.
+It offers you some capabilities to build images and debug them in k8s clusters directly.
+You don't need to install many runtime and many more versions of them in your laptop.
 No runtime changing and management. Also, no out-of-date garbage deps. All these are replaced by a k8s cluster.
 
 Currently, the plugin can only work with **containerd**. All features work well in a minikube cluster.

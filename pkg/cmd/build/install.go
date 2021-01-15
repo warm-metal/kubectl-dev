@@ -20,15 +20,19 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
+	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"golang.org/x/xerrors"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
 	"net/url"
 	"sigs.k8s.io/yaml"
+	"strings"
 )
 
 var readOnly = true
@@ -38,10 +42,10 @@ var numReplicas int32 = 1
 const builderNamespace = "dev"
 
 type BuilderInstallOptions struct {
-	configFlags *genericclioptions.ConfigFlags
+	kubectl.ConfigFlags
 
 	reinstall          bool
-	printManifest      bool
+	printManifests     bool
 	customManifestFile string
 
 	minikube        bool
@@ -57,7 +61,7 @@ type BuilderInstallOptions struct {
 
 func newBuilderInstallOptions(streams genericclioptions.IOStreams) *BuilderInstallOptions {
 	return &BuilderInstallOptions{
-		configFlags: genericclioptions.NewConfigFlags(true),
+		ConfigFlags: kubectl.NewConfigFlags(),
 		namespace:   builderNamespace,
 	}
 }
@@ -69,11 +73,11 @@ func (o *BuilderInstallOptions) Complete(cmd *cobra.Command, args []string) erro
 
 	addr, err := url.Parse(o.ContainerdAddr)
 	if err != nil {
-		return err
+		return fmt.Errorf(`invalid containerd socket address "%s": %s`, o.ContainerdAddr, err)
 	}
 
 	if addr.Scheme != "unix" {
-		return fmt.Errorf("containerd endpoint should be a unix socket")
+		return fmt.Errorf("containerd endpoint must be a unix socket")
 	}
 
 	o.ContainerdSocketPath = addr.Path
@@ -88,7 +92,7 @@ func (o *BuilderInstallOptions) Run() error {
 	cm := o.genBuildkitdToml()
 	svc, deploy := o.genBuildkitdWorkload()
 
-	if o.printManifest {
+	if o.printManifests {
 		j, err := json.Marshal([]runtime.Object{cm, svc, deploy})
 		if err != nil {
 			panic(err)
@@ -103,12 +107,7 @@ func (o *BuilderInstallOptions) Run() error {
 		return nil
 	}
 
-	config, err := o.configFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := o.ClientSet()
 	if err != nil {
 		return err
 	}
@@ -118,6 +117,7 @@ func (o *BuilderInstallOptions) Run() error {
 			return err
 		}
 
+		fmt.Println("Create namespace", o.namespace, "...")
 		_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: o.namespace,
@@ -129,34 +129,73 @@ func (o *BuilderInstallOptions) Run() error {
 	}
 
 	if o.reinstall {
+		fmt.Println("Reinstall buildkitd...")
+		fmt.Println("delete Service", svc.Name)
 		if err := kubectl.Delete("svc", svc.Name, o.namespace); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
+
+		fmt.Println("delete Deployment", deploy.Name)
 		if err := kubectl.Delete("deploy", deploy.Name, o.namespace); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
+
+		fmt.Println("delete ConfigMap", cm.Name)
 		if err := kubectl.Delete("cm", cm.Name, o.namespace); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
 	}
 
 	opts := metav1.CreateOptions{}
+
+	fmt.Println("create ConfigMap", cm.Name)
 	_, err = clientset.CoreV1().ConfigMaps(o.namespace).Create(context.TODO(), cm, opts)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
 
+	fmt.Println("create Service", svc.Name)
 	_, err = clientset.CoreV1().Services(o.namespace).Create(context.TODO(), svc, opts)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
 
+	fmt.Println("create Deployment", deploy.Name)
 	_, err = clientset.AppsV1().Deployments(o.namespace).Create(context.TODO(), deploy, opts)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
 
-	// FIXME wait until the builder service is ready
+	fmt.Println("wait Deployment...")
+	watcher, err := clientset.AppsV1().Deployments(o.namespace).Watch(context.TODO(), metav1.ListOptions{
+		FieldSelector: fields.Set{"metadata.name": deploy.Name}.AsSelector().String(),
+		Watch:                true,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	err = utils.WaitUntilErrorOr(watcher, func(object runtime.Object) (b bool, err error) {
+		deploy := object.(*appsv1.Deployment)
+		fmt.Printf("available replicas %d/%d\n", deploy.Status.AvailableReplicas, *deploy.Spec.Replicas)
+		return *deploy.Spec.Replicas != deploy.Status.AvailableReplicas, nil
+	})
+
+	if err != nil {
+		return xerrors.Errorf("can't start Deployment buildkitd: %s", err)
+	}
+
+	addrs, err := fetchBuilderEndpoints(clientset)
+	if err != nil {
+		return err
+	}
+
+	if len(addrs) > 0 {
+		fmt.Println("Installed. Builder works on one of", strings.Join(addrs, ","))
+	} else {
+		fmt.Println("Installed. Builder works on", addrs[0])
+	}
 
 	return nil
 }
@@ -166,10 +205,14 @@ func newCmdInstall(streams genericclioptions.IOStreams) *cobra.Command {
 
 	var cmd = &cobra.Command{
 		Use:   "install",
-		Short: "Install builder in k8s cluster.",
+		Short: "Install buildkitd in a k8s cluster.",
 		Long: `Install buildkitd in the cluster that, "kubectl-dev build" can use to build images.
 Buildkitd will share the same image store with the runtime.`,
-		Example: ``,
+		Example: `# Install build toolchains.
+kubectl dev build install
+
+# Install build toolchains in minikube cluster.
+kubectl dev build install --minikube`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -186,7 +229,7 @@ Buildkitd will share the same image store with the runtime.`,
 	}
 
 	cmd.Flags().BoolVar(&o.reinstall, "reinstall", false, "Override the previous install")
-	cmd.Flags().BoolVar(&o.printManifest, "print-manifest", false,
+	cmd.Flags().BoolVar(&o.printManifests, "print-manifests", false,
 		"If true, print manifests of the buildkitd.")
 	cmd.Flags().StringVarP(&o.customManifestFile, "file", "f", "",
 		"Custom manifest of the buildkitd.")
@@ -203,7 +246,6 @@ Buildkitd will share the same image store with the runtime.`,
 
 	cmd.Flags().IntVar(&o.Port, "port", 1234, "Port of buildkit")
 
-	o.configFlags.AddFlags(cmd.Flags())
-
+	o.AddFlags(cmd.Flags())
 	return cmd
 }

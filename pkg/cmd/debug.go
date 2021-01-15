@@ -20,18 +20,18 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
+	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/rand"
-	watch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/resource"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/scale/scheme/extensionsv1beta1"
-	"k8s.io/client-go/tools/clientcmd/api"
 	"os"
 	"strings"
 )
@@ -41,13 +41,13 @@ const (
 )
 
 type DebugOptions struct {
-	configFlags *genericclioptions.ConfigFlags
+	kubectl.ConfigFlags
 	genericclioptions.IOStreams
-	rawConfig api.Config
 
 	debugBaseImage   string
 	container        string
 	installCSIDriver bool
+	minikube         bool
 
 	id          string
 	instance    string
@@ -55,39 +55,29 @@ type DebugOptions struct {
 	image       string
 	podTmpl     *corev1.PodSpec
 	containerID int
+	namespace   string
 }
 
 func NewDebugOptions(streams genericclioptions.IOStreams) *DebugOptions {
 	return &DebugOptions{
-		configFlags:    genericclioptions.NewConfigFlags(true),
+		ConfigFlags:    kubectl.NewConfigFlags(),
 		IOStreams:      streams,
 		debugBaseImage: "bash:5",
 		id:             rand.String(5),
+		namespace:      metav1.NamespaceDefault,
 	}
 }
 
 func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
-	var err error
-	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
-	if err != nil {
-		return err
-	}
-
 	if len(args) < 1 || len(args) > 2 {
-		return fmt.Errorf("must specify a kind and an object, or an image. See the usage")
+		return xerrors.Errorf("must specify a kind and an object, or an image. See the usage")
 	}
 
-	if o.installCSIDriver {
-		const manifest = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd-minikube.yaml"
-		if err := kubectl.DeleteManifests(manifest); err != nil {
-			return err
-		}
-
-		if err := kubectl.ApplyManifests(manifest); err != nil {
-			return err
-		}
+	if o.Raw().Namespace != nil && len(*o.Raw().Namespace) > 0 {
+		o.namespace = *o.Raw().Namespace
 	}
 
+	// FIXME args[0] can be "po/name" other than an image
 	if len(args) == 1 {
 		o.image = args[0]
 		o.instance = fmt.Sprintf("debugger-image-%s", o.id)
@@ -103,45 +93,89 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		"debugger.warm-metal.tech/name": args[1],
 	}
 
-	result := resource.NewBuilder(o.configFlags).
+	podTmpl, err := o.fetchPod(o.namespace, args)
+	if err != nil {
+		return err
+	}
+
+	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
+		o.podTmpl = podTmpl
+		return nil
+	}
+
+	if len(o.container) == 0 {
+		var containers []string
+		for _, c := range podTmpl.Containers {
+			containers = append(containers, c.Name)
+		}
+
+		return xerrors.Errorf("%#v has more than 1 container. Specify one of %#v via -c", args, containers)
+	}
+
+	for i, c := range o.podTmpl.Containers {
+		if c.Name == o.container {
+			o.podTmpl = podTmpl
+			o.containerID = i
+			break
+		}
+	}
+
+	if o.podTmpl == nil {
+		return xerrors.Errorf("container %s doesn't found in %#v", o.container, args)
+	}
+
+	return nil
+}
+
+func (o *DebugOptions) Validate() error {
+	if len(o.image) == 0 && o.podTmpl == nil {
+		return fmt.Errorf("an image or object is required. See the usage")
+	}
+
+	return nil
+}
+
+func (o *DebugOptions) loadDefaultTemplate() {
+	o.podTmpl = &corev1.PodSpec{
+		Containers: []corev1.Container{
+			{
+				Name:  "debugger",
+				Image: o.image,
+				Stdin: true,
+			},
+		},
+	}
+}
+
+func (o *DebugOptions) fetchPod(namespace string, kindAndName []string) (*corev1.PodSpec, error) {
+	result := resource.NewBuilder(o.Raw()).
 		Unstructured().
 		ContinueOnError().
-		NamespaceParam(*o.configFlags.Namespace).DefaultNamespace().
-		ResourceTypeOrNameArgs(true, args...).
+		NamespaceParam(namespace).DefaultNamespace().
+		ResourceTypeOrNameArgs(true, kindAndName...).
 		SingleResourceType().
 		Flatten().
 		Do()
 	if result.Err() != nil {
-		cmd.PrintErrln(err.Error())
-		return err
+		return nil, xerrors.Errorf(`can't fetch "%#v": %s`, kindAndName, result.Err())
 	}
 
 	infos, err := result.Infos()
 	if err != nil {
-		cmd.PrintErrln(err.Error())
-		return err
+		return nil, xerrors.Errorf(`can't fetch result of "%#v": %s`, kindAndName, result.Err())
 	}
 
 	if len(infos) == 0 {
-		err = fmt.Errorf("%s not found", strings.Join(args, " "))
-		cmd.PrintErrf(err.Error())
-		return err
+		return nil, xerrors.Errorf(`no "%#v" found`, kindAndName)
 	}
 
 	if len(infos) > 1 {
 		panic(infos)
 	}
 
-	config, err := o.configFlags.ToRESTConfig()
+	clientset, err := o.ClientSet()
 	if err != nil {
-		cmd.PrintErrln(err.Error())
-		return err
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		cmd.PrintErrln(err.Error())
-		return err
+		return nil, err
 	}
 
 	var podTmpl *corev1.PodSpec
@@ -156,16 +190,14 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 				Deployments(info.Namespace).
 				Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &deploy.Spec.Template.Spec
 		case appsv1.GroupName:
 			deploy, err := clientset.AppsV1().Deployments(info.Namespace).Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &deploy.Spec.Template.Spec
@@ -179,8 +211,7 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 		sfst, err := clientset.AppsV1().StatefulSets(info.Namespace).Get(ctx, info.Name, opt)
 		if err != nil {
-			cmd.PrintErrln(err.Error())
-			return err
+			return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 		}
 
 		podTmpl = &sfst.Spec.Template.Spec
@@ -191,8 +222,7 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 		job, err := clientset.BatchV1().Jobs(info.Namespace).Get(ctx, info.Name, opt)
 		if err != nil {
-			cmd.PrintErrln(err.Error())
-			return err
+			return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 		}
 
 		podTmpl = &job.Spec.Template.Spec
@@ -203,8 +233,7 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 		job, err := clientset.BatchV1beta1().CronJobs(info.Namespace).Get(ctx, info.Name, opt)
 		if err != nil {
-			cmd.PrintErrln(err.Error())
-			return err
+			return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 		}
 
 		podTmpl = &job.Spec.JobTemplate.Spec.Template.Spec
@@ -213,16 +242,14 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		case extensionsv1beta1.GroupName:
 			ds, err := clientset.ExtensionsV1beta1().DaemonSets(info.Namespace).Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &ds.Spec.Template.Spec
 		case appsv1.GroupName:
 			ds, err := clientset.AppsV1().DaemonSets(info.Namespace).Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &ds.Spec.Template.Spec
@@ -234,16 +261,14 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		case extensionsv1beta1.GroupName:
 			rs, err := clientset.ExtensionsV1beta1().ReplicaSets(info.Namespace).Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &rs.Spec.Template.Spec
 		case appsv1.GroupName:
 			rs, err := clientset.AppsV1().ReplicaSets(info.Namespace).Get(ctx, info.Name, opt)
 			if err != nil {
-				cmd.PrintErrln(err.Error())
-				return err
+				return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 			}
 
 			podTmpl = &rs.Spec.Template.Spec
@@ -257,78 +282,41 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 		pod, err := clientset.CoreV1().Pods(info.Namespace).Get(ctx, info.Name, opt)
 		if err != nil {
-			cmd.PrintErrln(err.Error())
-			return err
+			return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 		}
 
 		podTmpl = &pod.Spec
 	default:
-		err = fmt.Errorf("%s not found. Forgot a namespace? ", strings.Join(args, " "))
-		cmd.PrintErrf(err.Error())
-		return err
+		err = fmt.Errorf("%s not found. Forgot a namespace? ", strings.Join(kindAndName, " "))
+		return nil, xerrors.Errorf("can't fetch %s/%s: %s", info.Mapping.GroupVersionKind, info.Name, err)
 	}
 
-	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
-		o.podTmpl = podTmpl
-		return nil
-	}
-
-	if len(o.container) == 0 {
-		err = fmt.Errorf("%s has more than 1 container. A specific container is required. See the usage",
-			strings.Join(args, " "))
-		cmd.PrintErrf(err.Error())
-		return err
-	}
-
-	for i, c := range o.podTmpl.Containers {
-		if c.Name == o.container {
-			o.podTmpl = podTmpl
-			o.containerID = i
-			break
-		}
-	}
-
-	if o.podTmpl == nil {
-		err = fmt.Errorf("%s has no container named %s", strings.Join(args, " "), o.container)
-		cmd.PrintErrf(err.Error())
-		return err
-	}
-
-	return nil
+	return podTmpl, nil
 }
 
-func (o *DebugOptions) Validate() error {
-	if len(o.image) == 0 && o.podTmpl == nil {
-		err := fmt.Errorf("an image or object is required. See the usage")
-		return err
-	}
-
-	return nil
-}
-
-func (o *DebugOptions) loadDefaultTemplate() error {
-	o.podTmpl = &corev1.PodSpec{
-		Containers: []corev1.Container{
-			{
-				Name:  "debugger",
-				Image: o.image,
-				Stdin: true,
-				TTY:   true,
-			},
-		},
-	}
-	return nil
-}
+const (
+	manifestMinikube   = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd-minikube.yaml"
+	manifestContainerd = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd.yaml"
+)
 
 func (o *DebugOptions) Run() error {
-	config, err := o.configFlags.ToRESTConfig()
-	if err != nil {
-		return err
-	}
+	if o.installCSIDriver {
+		manifest := manifestContainerd
+		if o.minikube {
+			manifest = manifestMinikube
+		}
 
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return err
+		fmt.Println("Install CSI driver for image mounting...")
+		fmt.Printf(`use manifests "%s"\n`, manifest)
+		fmt.Println("clear all installed objects")
+		if err := kubectl.DeleteManifests(manifest); err != nil {
+			return err
+		}
+
+		fmt.Println("install manifests")
+		if err := kubectl.ApplyManifests(manifest); err != nil {
+			return err
+		}
 	}
 
 	if len(o.image) > 0 {
@@ -336,9 +324,7 @@ func (o *DebugOptions) Run() error {
 			panic(o.podTmpl.String())
 		}
 
-		if err := o.loadDefaultTemplate(); err != nil {
-			return err
-		}
+		o.loadDefaultTemplate()
 	} else {
 		o.image = o.podTmpl.Containers[o.containerID].Image
 	}
@@ -384,17 +370,19 @@ func (o *DebugOptions) Run() error {
 		Spec: *o.podTmpl,
 	}
 
-	ns := metav1.NamespaceDefault
-	if o.configFlags.Namespace != nil && len(*o.configFlags.Namespace) > 0 {
-		ns = *o.configFlags.Namespace
-	}
-
-	newPod, err := clientset.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
+	clientset, err := o.ClientSet()
 	if err != nil {
 		return err
 	}
 
-	watcher, err := clientset.CoreV1().Pods(ns).Watch(context.TODO(), metav1.ListOptions{
+	fmt.Printf("Create debugger Pod %s...\n", pod.Name)
+	newPod, err := clientset.CoreV1().Pods(o.namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("waiting Pod ready")
+	watcher, err := clientset.CoreV1().Pods(o.namespace).Watch(context.TODO(), metav1.ListOptions{
 		FieldSelector: fields.Set{"metadata.name": newPod.Name}.AsSelector().String(),
 		Watch:         true,
 	})
@@ -403,34 +391,32 @@ func (o *DebugOptions) Run() error {
 		return err
 	}
 
-	for {
-		ev := <-watcher.ResultChan()
+	err = utils.WaitUntilErrorOr(watcher, func(object runtime.Object) (b bool, err error) {
+		fmt.Printf("Debugger %s updated\n", newPod.Name)
+		return object.(*corev1.Pod).Status.Phase == corev1.PodRunning, nil
+	})
 
-		if ev.Type != watch.Modified && ev.Type != watch.Added {
-			watcher.Stop()
-			return fmt.Errorf("the new pod can start, %#v", ev)
-		}
-
-		if ev.Object.(*corev1.Pod).Status.Phase == corev1.PodRunning {
-			break
-		}
+	if err != nil {
+		return xerrors.Errorf("can't start debugger Pod %s: %s", newPod.Name, err)
 	}
 
-	watcher.Stop()
+	fmt.Printf("Debugger Pod %s is ready\n", newPod.Name)
 
 	defer func() {
-		if err = clientset.CoreV1().Pods(ns).Delete(context.TODO(), newPod.Name, metav1.DeleteOptions{}); err != nil {
+		err = clientset.CoreV1().Pods(o.namespace).Delete(context.TODO(), newPod.Name, metav1.DeleteOptions{})
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "can't delete the pod debugger: %s\n", err)
 		}
 	}()
 
+	fmt.Printf("Start bash of debugger Pod %s\n", newPod.Name)
 	return kubectl.Exec(newPod.Name, newPod.Namespace, container.Name, "bash")
 }
 
 func NewCmdDebug(streams genericclioptions.IOStreams) *cobra.Command {
 	o := NewDebugOptions(streams)
 
-	var debugCmd = &cobra.Command{
+	var cmd = &cobra.Command{
 		Use:   "debug",
 		Short: "Debug running or failed workloads or images",
 		Long: `The image of the target workload will be mounted to a new Pod. You will see all original configurations 
@@ -470,16 +456,18 @@ kubectl dev debug image-name
 		},
 	}
 
-	debugCmd.Flags().StringVar(
+	cmd.Flags().BoolVar(&o.minikube, "minikube", o.minikube,
+		"If true, the target cluster is assumed to be a minikube cluster.")
+	cmd.Flags().StringVar(
 		&o.debugBaseImage, "base", o.debugBaseImage,
 		`Base image used to mount the target image. "bash" is required in the base image`)
-	debugCmd.Flags().StringVarP(
+	cmd.Flags().StringVarP(
 		&o.container, "container", "c", o.container,
 		"Container of the specified object if in which there are multiple containers")
-	debugCmd.Flags().BoolVar(&o.installCSIDriver, "also-apply-csi-driver", false,
+	cmd.Flags().BoolVar(&o.installCSIDriver, "also-apply-csi-driver", false,
 		`Apply the CSI driver "https://github.com/warm-metal/csi-driver-image". The driver is required. If you already have it installed, turn it off.`)
 
-	o.configFlags.AddFlags(debugCmd.Flags())
+	o.AddFlags(cmd.Flags())
 
-	return debugCmd
+	return cmd
 }

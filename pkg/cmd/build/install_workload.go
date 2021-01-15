@@ -1,10 +1,14 @@
 package build
 
 import (
+	"context"
+	"fmt"
+	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 )
 
 const builderWorkloadName = "buildkitd"
@@ -154,4 +158,56 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 	}
 
 	return svc, deploy
+}
+
+func fetchBuilderEndpoints(clientset *kubernetes.Clientset) (buildkitAddrs []string, err error) {
+	svc, err := clientset.CoreV1().Services(builderNamespace).
+		Get(context.TODO(), builderWorkloadName, metav1.GetOptions{})
+	if err != nil {
+		return nil, xerrors.Errorf(
+			`can't fetch builder endpoint from Service "%s/%s": %s`, builderNamespace, builderWorkloadName, err)
+	}
+
+	svcPort := int32(0)
+	nodePort:= int32(0)
+	for _, port := range svc.Spec.Ports {
+		if port.Name != builderWorkloadName {
+			continue
+		}
+
+		svcPort = port.Port
+		nodePort = port.NodePort
+	}
+
+	if svcPort > 0 {
+		for _, ingress := range svc.Status.LoadBalancer.Ingress {
+			if len(ingress.Hostname) > 0 {
+				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", ingress.Hostname, svcPort))
+			}
+
+			if len(ingress.IP) > 0 {
+				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", ingress.IP, svcPort))
+			}
+		}
+	}
+
+	buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", svc.Spec.ClusterIP, svcPort))
+	if nodePort == 0 {
+		return
+	}
+
+	nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
+	}
+
+	for _, node := range nodes.Items {
+		for _, addr := range node.Status.Addresses {
+			if len(addr.Address) > 0 {
+				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", addr.Address, nodePort))
+			}
+		}
+	}
+
+	return
 }

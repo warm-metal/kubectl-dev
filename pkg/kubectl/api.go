@@ -8,7 +8,7 @@ func Exec(pod, namespace, container string, args ...string) error {
 		"-c", container,
 		"--",
 	}
-	return run(append(cmd, args...)...)
+	return runWithIO(append(cmd, args...)...)
 }
 
 func ApplyManifests(manifestPath string) error {
