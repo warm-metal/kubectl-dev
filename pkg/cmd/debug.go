@@ -268,7 +268,6 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// FIXME remove probes
 	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
 		o.podTmpl = podTmpl
 		return nil
@@ -354,6 +353,9 @@ func (o *DebugOptions) Run() error {
 		Value: strings.Join(args, " "),
 	})
 	container.Stdin = true
+	container.ReadinessProbe = nil
+	container.LivenessProbe = nil
+	container.StartupProbe = nil
 
 	volume := corev1.Volume{
 		Name: fmt.Sprintf("debugger-image-%s", o.id),

@@ -7,6 +7,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const builderWorkloadName = "buildkitd"
+
 func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1.Deployment) {
 	svc := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -14,13 +16,13 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 			APIVersion: corev1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "buildkitd",
+			Name:      builderWorkloadName,
 			Namespace: o.namespace,
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:        "service",
+					Name:        builderWorkloadName,
 					Protocol:    corev1.ProtocolTCP,
 					AppProtocol: nil,
 					Port:        int32(o.Port),
@@ -55,7 +57,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 			APIVersion: appsv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "buildkitd",
+			Name:      builderWorkloadName,
 			Namespace: o.namespace,
 			Labels:    svc.Spec.Selector,
 		},
@@ -98,7 +100,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 					},
 					Containers: []corev1.Container{
 						{
-							Name:  "buildkitd",
+							Name:  builderWorkloadName,
 							Image: "moby/buildkit:master",
 							Ports: []corev1.ContainerPort{
 								{

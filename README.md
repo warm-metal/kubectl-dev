@@ -2,9 +2,11 @@
 
 **kubectl-dev** is a kubectl plugin to support development activities on k8s.
 
-The `debug` command can debug running or failed workloads, or images.
-It mounts the target image to a new Pod as well as workload configurations then open a new session of the Pod.
-This feature depends on `warm-metal/csi-driver-image`. It would be installed in the cluster.
+We want to move all your development activities, image building, debugging, as well as deps resolving,
+all of them into k8s clusters. You don't need to install many runtime and many more versions of them in your laptop.
+No runtime changing and management. Also, no out-of-date garbage deps. All these are replaced by a k8s cluster.
+
+Currently, the plugin can only work with **containerd**. All features work well in a minikube cluster.
 
 ## Install
 
@@ -16,12 +18,15 @@ go install github.com/warm-metal/kubectl-dev
 ## Usage
 
 ```bash
-# Debug the Deployment named workload
-kubectl dev debug deploy workload
+# Debug the Deployment named workload and install the CSI driver.
+kubectl dev debug deploy workload --also-apply-csi-driver
 
-# Install build toolchains
+# Install build toolchains.
 kubectl dev build install
 
-# Build an image
+# Install build toolchains in minikube cluster.
+kubectl dev build install --minikube
+
+# Build image in cluster using docker parameters and options.
 kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .
 ```

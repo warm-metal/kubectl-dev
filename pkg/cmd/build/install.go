@@ -35,6 +35,8 @@ var readOnly = true
 var privileged = true
 var numReplicas int32 = 1
 
+const builderNamespace = "dev"
+
 type BuilderInstallOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
@@ -56,7 +58,7 @@ type BuilderInstallOptions struct {
 func newBuilderInstallOptions(streams genericclioptions.IOStreams) *BuilderInstallOptions {
 	return &BuilderInstallOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
-		namespace:   "dev",
+		namespace:   builderNamespace,
 	}
 }
 
@@ -153,6 +155,8 @@ func (o *BuilderInstallOptions) Run() error {
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
+
+	// FIXME wait until the builder service is ready
 
 	return nil
 }
