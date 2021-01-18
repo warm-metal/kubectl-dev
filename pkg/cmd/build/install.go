@@ -169,7 +169,7 @@ func (o *BuilderInstallOptions) Run() error {
 	fmt.Println("wait Deployment...")
 	watcher, err := clientset.AppsV1().Deployments(o.namespace).Watch(context.TODO(), metav1.ListOptions{
 		FieldSelector: fields.Set{"metadata.name": deploy.Name}.AsSelector().String(),
-		Watch:                true,
+		Watch:         true,
 	})
 
 	if err != nil {
@@ -211,8 +211,15 @@ Buildkitd will share the same image store with the runtime.`,
 		Example: `# Install build toolchains.
 kubectl dev build install
 
-# Install build toolchains in minikube cluster.
-kubectl dev build install --minikube`,
+# Install build toolchains in a minikube cluster.
+kubectl dev build install --minikube
+
+# Show manifests
+kubectl dev build install --print-manifests
+
+# Customize containerd configuration.
+kubectl dev build install --containerd-addr=unix://foo --containerd-root=bar
+`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -237,7 +244,7 @@ kubectl dev build install --minikube`,
 	cmd.Flags().BoolVar(&o.minikube, "minikube", o.minikube,
 		"If true, the target cluster is assumed to be a minikube cluster.")
 	cmd.Flags().StringVar(&o.minikubeProfile, "minikube-profile", "minikube",
-		"Profile ID of the target minikube cluster.")
+		"[NOT SUPPORTED YET]Profile ID of the target minikube cluster.")
 
 	cmd.Flags().StringVar(&o.ContainerdAddr, "containerd-addr", "unix:///run/containerd/containerd.sock",
 		"The containerd socket address. Must be a valid URL of a UNIX socket.")
