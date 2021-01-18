@@ -555,28 +555,37 @@ func NewCmdDebug(streams genericclioptions.IOStreams) *cobra.Command {
 
 	var cmd = &cobra.Command{
 		Use:   "debug",
-		Short: "Debug running or failed workloads or images",
+		Short: "Debug running or failed workloads or images.",
 		Long: `The image of the target workload will be mounted to a new Pod. You will see all original configurations 
-even the filesystem in the new Pod, except the same entrypoint.
+even the filesystem in the new Pod, except the same entrypoint. Workloads could be Deployment, StatefulSet, DaemonSet,
+ReplicaSet, Job, CronJob, and Pod.
 `,
-		Example: `#Debug a running workload whether if failed or not.
-kubectl dev debug deploy name
+		Example: `# Debug a running or failed workload. And, install required drivers. This 
+kubectl dev debug deploy foo --also-apply-csi-driver
 
-# 
-kubectl dev debug pod name
+# Debug a running or failed workload. Run the same command again could open a new session to the same debugger.
+kubectl dev debug deploy foo
 
-kubectl dev debug ds name
+# If there are more than one debugger via same settings, Specify the Pod name to connect to one of them.
+kubectl dev debug deploy foo --debugger=bar
 
-kubectl dev debug job name
+# Force to start a new debugger.
+kubectl dev debug sfs foo --create-new
 
-kubectl dev debug cronjob name
+# Specify container name if more than one containers in the Pod.
+kubectl dev debug ds foo -c bar
 
-kubectl dev debug sts name
-
-kubectl dev debug rs name
+# Debug a Pod with a new versioned image. 
+kubectl dev debug pod foo --image bar:new-version
 
 #Debug an image.
-kubectl dev debug image-name
+kubectl dev debug --image foo:latest
+
+# The debugger Pod would be terminated after ONE of session closed except enabling --keep-debugger.
+kubectl dev debug job foo --keep-debugger
+
+# Use local network proxies.
+kubectl dev debug cronjob foo --use-proxy
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
@@ -597,7 +606,7 @@ kubectl dev debug image-name
 		"If set, the target cluster is assumed to be a minikube cluster.")
 	cmd.Flags().StringVar(
 		&o.debugBaseImage, "base", o.debugBaseImage,
-		`Base image used to mount the target image. "bash" is required in the base image`)
+		`Base image used to mount the target image. Command "bash" and "sleep" are required in the base image`)
 	cmd.Flags().StringVarP(
 		&o.container, "container", "c", o.container,
 		"Container of the specified object if in which there are multiple containers")

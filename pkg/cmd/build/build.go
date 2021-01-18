@@ -167,8 +167,8 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 		Long: `Build images in clusters and share arguments and options with the "docker build" command.
 "kubectl-dev build" use buildkitd as its build engine. Since buildkitd only support containerd or oci 
 as its worker, the build command also only support containerd as the container runtime.`,
-		Example: `# Build image in cluster using docker parameters and options.
-kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .`,
+		Example: `# Build image in the cluster using docker parameters and options.
+kubectl dev build -t foo:latest -f Dockerfile .`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -192,8 +192,8 @@ kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .`,
 	cmd.Flags().BoolVar(&o.noCache, "no-cache", false, "Do not use cache when building.")
 	cmd.Flags().StringSliceVar(&o.buildArgs, "build-arg", nil, "Set build-time variables.")
 	cmd.Flags().StringSliceVar(&o.buildkitAddrs, "buildkit-addr", nil,
-		"Endpoints of the buildkitd. Must be a valid tcp or unix socket URL(tcp:// or unix://). If not set, " +
-		"automatically fetch them from the cluster")
+		"Endpoints of the buildkitd. Must be a valid tcp or unix socket URL(tcp:// or unix://). If not set, "+
+			"automatically fetch them from the cluster")
 
 	o.AddFlags(cmd.Flags())
 

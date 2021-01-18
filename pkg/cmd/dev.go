@@ -26,10 +26,10 @@ func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
 		Use:   "kubectl-dev",
 		Short: "kubectl plugin to support development in k8s clusters",
 		Example: `# Debug the Deployment named workload and install the CSI driver.
-kubectl dev debug deploy workload --also-apply-csi-driver
+kubectl dev debug deploy foo --also-apply-csi-driver
 
 # Debug an image. 
-kubectl dev debug docker.io/warmmetal/image:label
+kubectl dev debug --image foo:latest
 
 # Install build toolchains.
 kubectl dev build install
@@ -38,7 +38,7 @@ kubectl dev build install
 kubectl dev build install --minikube
 
 # Build image in cluster using docker parameters and options.
-kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .`,
+kubectl dev build -t foo:tag -f Dockerfile .`,
 	}
 
 	devCmd.AddCommand(NewCmdDebug(streams))
