@@ -36,8 +36,6 @@ import (
 	"k8s.io/cli-runtime/pkg/resource"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/scale/scheme/extensionsv1beta1"
-	"net"
-	"net/url"
 	"os"
 	"strings"
 )
@@ -72,7 +70,7 @@ func NewDebugOptions(streams genericclioptions.IOStreams) *DebugOptions {
 	return &DebugOptions{
 		ConfigFlags:    kubectl.NewConfigFlags(),
 		IOStreams:      streams,
-		debugBaseImage: "bash:5",
+		debugBaseImage: "docker.io/warmmetal/debugger:alpine",
 		id:             rand.String(5),
 		namespace:      metav1.NamespaceDefault,
 	}
@@ -449,37 +447,12 @@ func (o *DebugOptions) Run() error {
 	container.StartupProbe = nil
 
 	if o.useHTTPProxy {
-		proxyEnvs := []string{"http_proxy", "https_proxy", "no_proxy"}
-		for _, env := range proxyEnvs {
-			v, found := os.LookupEnv(env)
-			if !found {
-				v, found = os.LookupEnv(strings.ToUpper(env))
-			}
-
-			if !found {
-				return xerrors.Errorf(`environment variable "%s" not found`, env)
-			}
-
-			if strings.HasPrefix(strings.ToLower(env), "http") {
-				proxy, err := url.Parse(v)
-				if err != nil {
-					return xerrors.Errorf(`value of environment variable "%s", %s is not invalid: %s`,
-						env, v, err)
-				}
-
-				if net.ParseIP(proxy.Host).IsLoopback() {
-					return xerrors.Errorf(`proxy "%s" is a loopback URL. can't work in Pods.'`, env)
-				}
-			}
-
-			container.Env = append(container.Env, corev1.EnvVar{
-				Name:  env,
-				Value: v,
-			}, corev1.EnvVar{
-				Name:  strings.ToUpper(env),
-				Value: v,
-			})
+		proxies, err := utils.GetSysProxy()
+		if err != nil {
+			return err
 		}
+
+		container.Env = append(container.Env, proxies...)
 	}
 
 	volume := corev1.Volume{
@@ -620,7 +593,8 @@ kubectl dev debug cronjob foo --use-proxy
 		"Debugger Pod name. If set along with --create-new=false, will find debugger has the specified name.")
 	cmd.Flags().BoolVar(&o.keepDebugger, "keep-debugger", false,
 		"If set, the debugger Pod won't be destroyed after the session closed.")
-	cmd.Flags().BoolVar(&o.useHTTPProxy, "use-proxy", false, "If set, use current proxy settings.")
+	cmd.Flags().BoolVar(&o.useHTTPProxy, "use-proxy", false,
+		"If set, use current HTTP proxy settings.")
 	o.AddFlags(cmd.Flags())
 
 	return cmd

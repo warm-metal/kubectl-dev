@@ -7,7 +7,7 @@ import (
 	"text/template"
 )
 
-const buildkitdToml = `debug = false
+const buildkitdToml = `debug = true
 # root is where all buildkit state is stored.
 root = "/var/lib/buildkit"
 # insecure-entitlements allows insecure entitlements, disabled by default.
@@ -22,7 +22,7 @@ insecure-entitlements = [ "network.host", "security.insecure" ]
   enabled = false
 
 [worker.containerd]
-  address = "{{.ContainerdSocketPath}}"
+  address = "{{.ContainerdRuntimeRoot}}/containerd.sock"
   enabled = true
   platforms = [ "linux/amd64", "linux/arm64" ]
   namespace = "k8s.io"
