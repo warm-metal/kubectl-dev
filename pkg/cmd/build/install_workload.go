@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,7 +14,7 @@ import (
 
 const builderWorkloadName = "buildkitd"
 
-func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1.Deployment) {
+func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1.Deployment, error) {
 	svc := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
@@ -41,8 +42,10 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 		},
 	}
 
-	socket := corev1.HostPathSocket
+	//socket := corev1.HostPathSocket
 	dir := corev1.HostPathDirectory
+	dirOrCreate := corev1.HostPathDirectoryOrCreate
+	bidirectional := corev1.MountPropagationBidirectional
 	probe := &corev1.Probe{
 		Handler: corev1.Handler{
 			Exec: &corev1.ExecAction{Command: []string{
@@ -77,11 +80,29 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 				Spec: corev1.PodSpec{
 					Volumes: []corev1.Volume{
 						{
-							Name: "snapshot-home",
+							Name: "containerd-root",
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: o.containerdRoot,
 									Type: &dir,
+								},
+							},
+						},
+						{
+							Name: "containerd-runtime",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: o.ContainerdRuntimeRoot,
+									Type: &dir,
+								},
+							},
+						},
+						{
+							Name: "buildkit-root",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/var/lib/buildkit",
+									Type: &dirOrCreate,
 								},
 							},
 						},
@@ -94,7 +115,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 									},
 									Items: []corev1.KeyToPath{
 										{
-											Key: "buildkitd.toml",
+											Key:  "buildkitd.toml",
 											Path: "buildkitd.toml",
 										},
 									},
@@ -105,7 +126,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 					Containers: []corev1.Container{
 						{
 							Name:  builderWorkloadName,
-							Image: "moby/buildkit:master",
+							Image: "warmmetal/buildkit:0.8.1",
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "service",
@@ -115,13 +136,24 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "snapshot-home",
+									Name:      "containerd-root",
 									MountPath: o.containerdRoot,
+								},
+								{
+									Name:             "containerd-runtime",
+									MountPath:        o.ContainerdRuntimeRoot,
+									MountPropagation: &bidirectional,
+								},
+								{
+									// FIXME clear /var/lib/buildkit after each reinstalled
+									Name:             "buildkit-root",
+									MountPath:        "/var/lib/buildkit",
+									MountPropagation: &bidirectional,
 								},
 								{
 									Name:      "buildkitd-conf",
 									MountPath: "/etc/buildkit/buildkitd.toml",
-									SubPath: "buildkitd.toml",
+									SubPath:   "buildkitd.toml",
 								},
 							},
 							LivenessProbe:  probe,
@@ -136,28 +168,17 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 		},
 	}
 
-	if len(o.ContainerdSocketPath) > 0 {
-		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes,
-			corev1.Volume{
-				Name: "containerd-socket",
-				VolumeSource: corev1.VolumeSource{
-					HostPath: &corev1.HostPathVolumeSource{
-						Path: o.ContainerdSocketPath,
-						Type: &socket,
-					},
-				},
-			},
-		)
-		deploy.Spec.Template.Spec.Containers[0].VolumeMounts = append(
-			deploy.Spec.Template.Spec.Containers[0].VolumeMounts,
-			corev1.VolumeMount{
-				Name:      "containerd-socket",
-				MountPath: o.ContainerdSocketPath,
-			},
-		)
+	if o.useHTTPProxy {
+		proxies, err := utils.GetSysProxy()
+		if err != nil {
+			return nil, nil, err
+		} else {
+			deploy.Spec.Template.Spec.Containers[0].Env = append(
+				deploy.Spec.Template.Spec.Containers[0].Env, proxies...)
+		}
 	}
 
-	return svc, deploy
+	return svc, deploy, nil
 }
 
 func fetchBuilderEndpoints(clientset *kubernetes.Clientset) (buildkitAddrs []string, err error) {
@@ -169,7 +190,7 @@ func fetchBuilderEndpoints(clientset *kubernetes.Clientset) (buildkitAddrs []str
 	}
 
 	svcPort := int32(0)
-	nodePort:= int32(0)
+	nodePort := int32(0)
 	for _, port := range svc.Spec.Ports {
 		if port.Name != builderWorkloadName {
 			continue

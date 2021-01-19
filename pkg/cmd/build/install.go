@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"net/url"
 	"sigs.k8s.io/yaml"
 	"strings"
 )
@@ -47,13 +46,13 @@ type BuilderInstallOptions struct {
 	reinstall          bool
 	printManifests     bool
 	customManifestFile string
+	useHTTPProxy       bool
 
 	minikube        bool
 	minikubeProfile string
 
-	ContainerdAddr       string
-	ContainerdSocketPath string
-	containerdRoot       string
+	ContainerdRuntimeRoot string
+	containerdRoot        string
 
 	Port      int
 	namespace string
@@ -71,16 +70,6 @@ func (o *BuilderInstallOptions) Complete(cmd *cobra.Command, args []string) erro
 		o.containerdRoot = "/mnt/vda1/var/lib/containerd"
 	}
 
-	addr, err := url.Parse(o.ContainerdAddr)
-	if err != nil {
-		return fmt.Errorf(`invalid containerd socket address "%s": %s`, o.ContainerdAddr, err)
-	}
-
-	if addr.Scheme != "unix" {
-		return fmt.Errorf("containerd endpoint must be a unix socket")
-	}
-
-	o.ContainerdSocketPath = addr.Path
 	return nil
 }
 
@@ -90,7 +79,10 @@ func (o *BuilderInstallOptions) Validate() error {
 
 func (o *BuilderInstallOptions) Run() error {
 	cm := o.genBuildkitdToml()
-	svc, deploy := o.genBuildkitdWorkload()
+	svc, deploy, err := o.genBuildkitdWorkload()
+	if err != nil {
+		return err
+	}
 
 	if o.printManifests {
 		j, err := json.Marshal([]runtime.Object{cm, svc, deploy})
@@ -179,7 +171,7 @@ func (o *BuilderInstallOptions) Run() error {
 	err = utils.WaitUntilErrorOr(watcher, func(object runtime.Object) (b bool, err error) {
 		deploy := object.(*appsv1.Deployment)
 		fmt.Printf("available replicas %d/%d\n", deploy.Status.AvailableReplicas, *deploy.Spec.Replicas)
-		return *deploy.Spec.Replicas != deploy.Status.AvailableReplicas, nil
+		return *deploy.Spec.Replicas == deploy.Status.AvailableReplicas, nil
 	})
 
 	if err != nil {
@@ -192,7 +184,7 @@ func (o *BuilderInstallOptions) Run() error {
 	}
 
 	if len(addrs) > 0 {
-		fmt.Println("Installed. Builder works on one of", strings.Join(addrs, ","))
+		fmt.Println("Installed. Builder works on any of", strings.Join(addrs, ","))
 	} else {
 		fmt.Println("Installed. Builder works on", addrs[0])
 	}
@@ -220,6 +212,8 @@ kubectl dev build install --print-manifests
 # Customize containerd configuration.
 kubectl dev build install --containerd-addr=unix://foo --containerd-root=bar
 `,
+		SilenceErrors: false,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -246,12 +240,14 @@ kubectl dev build install --containerd-addr=unix://foo --containerd-root=bar
 	cmd.Flags().StringVar(&o.minikubeProfile, "minikube-profile", "minikube",
 		"[NOT SUPPORTED YET]Profile ID of the target minikube cluster.")
 
-	cmd.Flags().StringVar(&o.ContainerdAddr, "containerd-addr", "unix:///run/containerd/containerd.sock",
-		"The containerd socket address. Must be a valid URL of a UNIX socket.")
+	cmd.Flags().StringVar(&o.ContainerdRuntimeRoot, "containerd-runtime-root", "/run/containerd",
+		`The runtime root path of containerd. It usually is "/run/containerd". containerd.sock must be in the directory.`)
 	cmd.Flags().StringVar(&o.containerdRoot, "containerd-root", "/var/lib/containerd",
 		"The root path of containerd.")
 
 	cmd.Flags().IntVar(&o.Port, "port", 1234, "Port of buildkit")
+	cmd.Flags().BoolVar(&o.useHTTPProxy, "use-proxy", false,
+		"If set, use current HTTP proxy settings.")
 
 	o.AddFlags(cmd.Flags())
 	return cmd

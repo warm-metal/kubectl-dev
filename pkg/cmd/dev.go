@@ -22,7 +22,7 @@ import (
 )
 
 func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
-	var devCmd = &cobra.Command{
+	var cmd = &cobra.Command{
 		Use:   "kubectl-dev",
 		Short: "kubectl plugin to support development in k8s clusters",
 		Example: `# Debug the Deployment named workload and install the CSI driver.
@@ -41,7 +41,7 @@ kubectl dev build install --minikube
 kubectl dev build -t foo:tag -f Dockerfile .`,
 	}
 
-	devCmd.AddCommand(NewCmdDebug(streams))
-	devCmd.AddCommand(build.NewCmd(streams))
-	return devCmd
+	cmd.AddCommand(NewCmdDebug(streams))
+	cmd.AddCommand(build.NewCmd(streams))
+	return cmd
 }

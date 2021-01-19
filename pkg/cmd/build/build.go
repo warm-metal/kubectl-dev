@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type BuildOptions struct {
@@ -83,8 +84,9 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		"dockerfile": filepath.Dir(dockerfile),
 	}
 
-	o.solveOpt.FrontendAttrs = make(map[string]string)
-	o.solveOpt.FrontendAttrs["filename"] = dockerfile
+	o.solveOpt.FrontendAttrs = map[string]string{
+		"filename": filepath.Base(dockerfile),
+	}
 
 	if len(o.targetStage) > 0 {
 		o.solveOpt.FrontendAttrs["target"] = o.targetStage
@@ -127,30 +129,37 @@ func (o *BuildOptions) Run() (err error) {
 	var client *buildkit.Client
 	for i, addr := range o.buildkitAddrs {
 		client, err = buildkit.New(context.TODO(), addr, buildkit.WithFailFast())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, `can't connect to builder "%s": %s\n`, addr, err)
-			i++
-			if i < len(o.buildkitAddrs) {
-				fmt.Fprintf(os.Stderr, `Try the next endpoint %s\n`, o.buildkitAddrs[i])
-			}
-			continue
+		if err == nil {
+			timed, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+			_, err = client.ListWorkers(timed)
+			cancel()
 		}
 
-		break
+		if err == nil {
+			break
+		}
+
+		fmt.Fprintf(os.Stderr, `can't connect to builder "%s": %s\n`, addr, err)
+		i++
+		if i < len(o.buildkitAddrs) {
+			fmt.Fprintf(os.Stderr, `Try the next endpoint %s\n`, o.buildkitAddrs[i])
+		}
 	}
 
 	if client == nil {
 		return xerrors.Errorf("all builder endpoints are unavailable")
 	}
 
+	defer client.Close()
+
 	pw, err := progresswriter.NewPrinter(context.TODO(), os.Stderr, "")
 	if err != nil {
 		return xerrors.Errorf("can't initialize progress writer: %s", err)
 	}
 
-	_, err = client.Solve(context.TODO(), nil, o.solveOpt, pw.Status())
-	if err != nil {
-		return err
+	if _, err = client.Solve(context.TODO(), nil, o.solveOpt, pw.Status()); err != nil {
+		<-pw.Done()
+		return xerrors.Errorf("%s", err)
 	}
 
 	<-pw.Done()
@@ -169,6 +178,8 @@ func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
 as its worker, the build command also only support containerd as the container runtime.`,
 		Example: `# Build image in the cluster using docker parameters and options.
 kubectl dev build -t foo:latest -f Dockerfile .`,
+		SilenceErrors: false,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
