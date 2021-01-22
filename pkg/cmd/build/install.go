@@ -19,11 +19,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -40,8 +40,10 @@ var numReplicas int32 = 1
 
 const builderNamespace = "dev"
 
+// FIXME Pod labels for configurations, such as proxy enabled
+
 type BuilderInstallOptions struct {
-	kubectl.ConfigFlags
+	*opts.GlobalOptions
 
 	reinstall          bool
 	printManifests     bool
@@ -58,10 +60,10 @@ type BuilderInstallOptions struct {
 	namespace string
 }
 
-func newBuilderInstallOptions(streams genericclioptions.IOStreams) *BuilderInstallOptions {
+func newBuilderInstallOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *BuilderInstallOptions {
 	return &BuilderInstallOptions{
-		ConfigFlags: kubectl.NewConfigFlags(),
-		namespace:   builderNamespace,
+		GlobalOptions: opts,
+		namespace:     builderNamespace,
 	}
 }
 
@@ -104,20 +106,8 @@ func (o *BuilderInstallOptions) Run() error {
 		return err
 	}
 
-	if _, err = clientset.CoreV1().Namespaces().Get(context.TODO(), o.namespace, metav1.GetOptions{}); err != nil {
-		if !errors.IsNotFound(err) {
-			return err
-		}
-
-		fmt.Println("Create namespace", o.namespace, "...")
-		_, err = clientset.CoreV1().Namespaces().Create(context.TODO(), &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: o.namespace,
-			},
-		}, metav1.CreateOptions{})
-		if err != nil {
-			return err
-		}
+	if err = utils.EnsureNamespace(clientset, o.namespace); err != nil {
+		return err
 	}
 
 	if o.reinstall {
@@ -192,8 +182,8 @@ func (o *BuilderInstallOptions) Run() error {
 	return nil
 }
 
-func newCmdInstall(streams genericclioptions.IOStreams) *cobra.Command {
-	o := newBuilderInstallOptions(streams)
+func newCmdInstall(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
+	o := newBuilderInstallOptions(opts, streams)
 
 	var cmd = &cobra.Command{
 		Use:   "install",

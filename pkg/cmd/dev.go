@@ -18,10 +18,18 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/build"
+	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
+	"github.com/warm-metal/kubectl-dev/pkg/dev"
+	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
+	o := &opts.GlobalOptions{
+		DevNamespace: "dev",
+		ConfigFlags:  kubectl.NewConfigFlags(),
+	}
+
 	var cmd = &cobra.Command{
 		Use:   "kubectl-dev",
 		Short: "kubectl plugin to support development in k8s clusters",
@@ -39,9 +47,19 @@ kubectl dev build install --minikube
 
 # Build image in cluster using docker parameters and options.
 kubectl dev build -t foo:tag -f Dockerfile .`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			clientset, err := o.ClientSet()
+			if err != nil {
+				return err
+			}
+
+			return dev.Prepare(clientset, o.DevNamespace)
+		},
 	}
 
-	cmd.AddCommand(NewCmdDebug(streams))
-	cmd.AddCommand(build.NewCmd(streams))
+	cmd.AddCommand(NewCmdDebug(o, streams), build.NewCmd(o, streams))
+	cmd.PersistentFlags().StringVar(&o.DevNamespace, "dev-namespace", "dev",
+		"Namespace in which kubectl-dev coordinators installed")
+	o.AddFlags(cmd.Flags())
 	return cmd
 }
