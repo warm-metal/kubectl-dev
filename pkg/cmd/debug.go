@@ -20,6 +20,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
+	"github.com/warm-metal/kubectl-dev/pkg/dev"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
@@ -45,7 +47,7 @@ const (
 )
 
 type DebugOptions struct {
-	kubectl.ConfigFlags
+	*opts.GlobalOptions
 	genericclioptions.IOStreams
 
 	debugBaseImage   string
@@ -66,13 +68,24 @@ type DebugOptions struct {
 	namespace   string
 }
 
-func NewDebugOptions(streams genericclioptions.IOStreams) *DebugOptions {
+const (
+	labelImage     = "debugger.warm-metal.tech/image"
+	labelDebugger  = "warm-metal.tech/debugger"
+	labelKind      = "debugger.warm-metal.tech/kind"
+	labelName      = "debugger.warm-metal.tech/name"
+	labelContainer = "debugger.warm-metal.tech/container"
+)
+
+func NewDebugOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *DebugOptions {
 	return &DebugOptions{
-		ConfigFlags:    kubectl.NewConfigFlags(),
+		GlobalOptions:  opts,
 		IOStreams:      streams,
 		debugBaseImage: "docker.io/warmmetal/debugger:alpine",
 		id:             rand.String(5),
 		namespace:      metav1.NamespaceDefault,
+		labels: map[string]string{
+			labelDebugger: "",
+		},
 	}
 }
 
@@ -81,17 +94,17 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.namespace = *o.Raw().Namespace
 	}
 
+	if len(o.image) > 0 {
+		encodedImage := base64.StdEncoding.EncodeToString([]byte(o.image))
+		o.labels[labelImage] = encodedImage
+	}
+
 	if len(args) == 0 {
 		if len(o.image) == 0 {
 			return xerrors.Errorf("specify an image or an object")
 		}
 
-		encodedImage := base64.StdEncoding.EncodeToString([]byte(o.image))
-		o.instance = fmt.Sprintf("debugger-%s-%s", encodedImage, o.id)
-		o.labels = map[string]string{
-			"debugger.warm-metal.tech/image": encodedImage,
-		}
-
+		o.instance = fmt.Sprintf("debugger-%s-%s", o.labels[labelImage], o.id)
 		return nil
 	}
 
@@ -102,9 +115,9 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	o.instance = fmt.Sprintf("debugger-%s-%s-%s", kind, name, o.id)
 	o.labels = map[string]string{
-		"debugger.warm-metal.tech/kind":      kind,
-		"debugger.warm-metal.tech/name":      name,
-		"debugger.warm-metal.tech/container": o.container,
+		labelKind:      kind,
+		labelName:      name,
+		labelContainer: o.container,
 	}
 
 	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
@@ -320,6 +333,8 @@ func (o *DebugOptions) fetchPod(
 	return
 }
 
+const shellContextSidecar = "shell-context-sync"
+
 func (o *DebugOptions) fetchDebugger(clientSet *kubernetes.Clientset) (debugger, container string, err error) {
 	opts := metav1.ListOptions{
 		LabelSelector: labels.SelectorFromSet(o.labels).String(),
@@ -350,34 +365,80 @@ func (o *DebugOptions) fetchDebugger(clientSet *kubernetes.Clientset) (debugger,
 	}
 
 	debugger = debuggerList.Items[0].Name
-	if len(debuggerList.Items[0].Spec.Containers) == 1 {
-		container = debuggerList.Items[0].Spec.Containers[0].Name
-		if len(o.container) > 0 && container != o.container {
-			err = xerrors.Errorf("container %s doesn't found in debugger %s. Try %s or remove -c",
-				o.container, debugger)
+	containerMap := make(map[string]int, len(debuggerList.Items[0].Spec.Containers))
+	containerNames := make([]string, 0, len(debuggerList.Items[0].Spec.Containers))
+	for i, c := range debuggerList.Items[0].Spec.Containers {
+		if c.Name == shellContextSidecar {
+			continue
+		}
+
+		containerMap[c.Name] = i
+		containerNames = append(containerNames, c.Name)
+	}
+
+	if len(containerMap) == 0 {
+		err = xerrors.Errorf("no container found in debugger %s", debugger)
+		return
+	}
+
+	if len(o.container) > 0 {
+		if _, found := containerMap[o.container]; !found {
+			err = xerrors.Errorf(`container %s doesn't found in debugger %s. Existed containers are %#v`,
+				o.container, debugger, containerNames)
+		} else {
+			container = o.container
 		}
 
 		return
 	}
 
-	if len(o.container) == 0 {
-		var containers []string
-		for _, c := range debuggerList.Items[0].Spec.Containers {
-			containers = append(containers, c.Name)
-		}
-
+	if len(containerMap) > 1 {
 		err = xerrors.Errorf("debugger %s has more than 1 container. Specify one of %#v via -c",
-			debuggerList, containers)
+			debugger, containerNames)
 		return
 	}
 
-	for _, c := range debuggerList.Items[0].Spec.Containers {
-		if c.Name == o.container {
-			container = c.Name
-		}
+	container = containerNames[0]
+	return
+}
+
+// FIXME follow the plugin version
+const shellContextSyncImage = "docker.io/warmmetal/f2cm:v0.1.0"
+
+func (o *DebugOptions) installHistorySync(podTmpl *corev1.PodSpec, target *corev1.Container) error {
+	podTmpl.Volumes = append(podTmpl.Volumes, corev1.Volume{
+		Name: "shell-context",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+
+	sharedCtx := corev1.VolumeMount{
+		Name:      "shell-context",
+		MountPath: "/root",
 	}
 
-	return
+	target.VolumeMounts = append(target.VolumeMounts, sharedCtx)
+
+	podTmpl.InitContainers = []corev1.Container{
+		{
+			Name:         "shell-context-initializer",
+			Image:        shellContextSyncImage,
+			Args:         []string{fmt.Sprintf("%s/%s=>/root", o.DevNamespace, dev.HistoryConfigMap)},
+			VolumeMounts: []corev1.VolumeMount{sharedCtx},
+		},
+	}
+	podTmpl.Containers = append(podTmpl.Containers, corev1.Container{
+		Name:  shellContextSidecar,
+		Image: shellContextSyncImage,
+		Args: []string{
+			"-w",
+			fmt.Sprintf("/root=>%s/%s", o.DevNamespace, dev.HistoryConfigMap),
+		},
+		VolumeMounts: []corev1.VolumeMount{sharedCtx},
+	})
+
+	return nil
 }
 
 const (
@@ -445,6 +506,13 @@ func (o *DebugOptions) Run() error {
 	container.ReadinessProbe = nil
 	container.LivenessProbe = nil
 	container.StartupProbe = nil
+	container.Lifecycle = &corev1.Lifecycle{
+		PreStop: &corev1.Handler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"history", "-a"},
+			},
+		},
+	}
 
 	if o.useHTTPProxy {
 		proxies, err := utils.GetSysProxy()
@@ -455,7 +523,7 @@ func (o *DebugOptions) Run() error {
 		container.Env = append(container.Env, proxies...)
 	}
 
-	volume := corev1.Volume{
+	imageVolume := corev1.Volume{
 		Name: fmt.Sprintf("debugger-image-%s", o.id),
 		VolumeSource: corev1.VolumeSource{
 			CSI: &corev1.CSIVolumeSource{
@@ -467,12 +535,16 @@ func (o *DebugOptions) Run() error {
 		},
 	}
 
-	o.podTmpl.Volumes = append(o.podTmpl.Volumes, volume)
+	o.podTmpl.Volumes = append(o.podTmpl.Volumes, imageVolume)
 	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-		Name:      volume.Name,
+		Name:      imageVolume.Name,
 		ReadOnly:  true,
 		MountPath: "/image",
 	})
+
+	if err := o.installHistorySync(o.podTmpl, container); err != nil {
+		return err
+	}
 
 	debugger := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -514,17 +586,18 @@ func (o *DebugOptions) Run() error {
 		defer func() {
 			fmt.Printf("Destroy debugger %s/%s...\n", newDebugger.Namespace, newDebugger.Name)
 			if err = kubectl.Delete("Pod", newDebugger.Name, newDebugger.Namespace); err != nil {
-				fmt.Fprintf(os.Stderr, "can't delete the debugger debugger: %s\n", err)
+				fmt.Fprintf(os.Stderr, "can't delete the debugger Pod: %s\n", err)
 			}
 		}()
 	}
 
 	fmt.Printf("Start bash of debugger Pod %s\n", newDebugger.Name)
+	// FIXME support custom debugger images
 	return kubectl.Exec(newDebugger.Name, newDebugger.Namespace, container.Name, "bash")
 }
 
-func NewCmdDebug(streams genericclioptions.IOStreams) *cobra.Command {
-	o := NewDebugOptions(streams)
+func NewCmdDebug(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
+	o := NewDebugOptions(opts, streams)
 
 	var cmd = &cobra.Command{
 		Use:   "debug",
@@ -560,6 +633,8 @@ kubectl dev debug job foo --keep-debugger
 # Use local network proxies.
 kubectl dev debug cronjob foo --use-proxy
 `,
+		SilenceErrors: false,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err

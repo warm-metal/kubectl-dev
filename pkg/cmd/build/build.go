@@ -22,7 +22,7 @@ import (
 	"github.com/moby/buildkit/util/progress/progresswriter"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
+	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"os"
@@ -32,7 +32,7 @@ import (
 )
 
 type BuildOptions struct {
-	kubectl.ConfigFlags
+	*opts.GlobalOptions
 
 	dockerfile  string
 	tag         string
@@ -46,10 +46,10 @@ type BuildOptions struct {
 	buildkitAddrs []string
 }
 
-func newBuilderOptions(streams genericclioptions.IOStreams) *BuildOptions {
+func newBuilderOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *BuildOptions {
 	return &BuildOptions{
-		ConfigFlags: kubectl.NewConfigFlags(),
-		buildCtx:    ".",
+		GlobalOptions: opts,
+		buildCtx:      ".",
 		solveOpt: buildkit.SolveOpt{
 			Frontend: "dockerfile.v0",
 		},
@@ -167,8 +167,8 @@ func (o *BuildOptions) Run() (err error) {
 	return nil
 }
 
-func NewCmd(streams genericclioptions.IOStreams) *cobra.Command {
-	o := newBuilderOptions(streams)
+func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
+	o := newBuilderOptions(opts, streams)
 
 	var cmd = &cobra.Command{
 		Use:   "build [OPTIONS] [PATH]",
@@ -208,6 +208,6 @@ kubectl dev build -t foo:latest -f Dockerfile .`,
 
 	o.AddFlags(cmd.Flags())
 
-	cmd.AddCommand(newCmdInstall(streams))
+	cmd.AddCommand(newCmdInstall(opts, streams))
 	return cmd
 }
