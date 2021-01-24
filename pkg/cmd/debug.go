@@ -54,6 +54,7 @@ type DebugOptions struct {
 	container        string
 	installCSIDriver bool
 	minikube         bool
+	docker           bool
 	createNew        bool
 	debuggerPodName  string
 	keepDebugger     bool
@@ -444,6 +445,7 @@ func (o *DebugOptions) installHistorySync(podTmpl *corev1.PodSpec, target *corev
 const (
 	manifestMinikube   = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd-minikube.yaml"
 	manifestContainerd = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-containerd.yaml"
+	manifestDocker     = "https://raw.githubusercontent.com/warm-metal/csi-driver-image/master/install/cri-docker.yaml"
 )
 
 func (o *DebugOptions) Run() error {
@@ -451,6 +453,10 @@ func (o *DebugOptions) Run() error {
 		manifest := manifestContainerd
 		if o.minikube {
 			manifest = manifestMinikube
+		}
+
+		if o.docker {
+			manifest = manifestDocker
 		}
 
 		fmt.Println("Install CSI driver for image mounting...")
@@ -605,6 +611,9 @@ func NewCmdDebug(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) 
 		Long: `The image of the target workload will be mounted to a new Pod. You will see all original configurations 
 even the filesystem in the new Pod, except the same entrypoint. Workloads could be Deployment, StatefulSet, DaemonSet,
 ReplicaSet, Job, CronJob, and Pod.
+
+The command requires the CSI driver https://github.com/warm-metal/csi-driver-image. All the install manifests are in its
+"install" folder. If they aren't exactly match your cluster, you can install it manually. 
 `,
 		Example: `# Debug a running or failed workload. And, install required drivers. This 
 kubectl dev debug deploy foo --also-apply-csi-driver
@@ -652,6 +661,8 @@ kubectl dev debug cronjob foo --use-proxy
 
 	cmd.Flags().BoolVar(&o.minikube, "minikube", o.minikube,
 		"If set, the target cluster is assumed to be a minikube cluster.")
+	cmd.Flags().BoolVar(&o.docker, "docker", o.docker,
+		"If set, the target container runtime is assumed to be Docker.")
 	cmd.Flags().StringVar(
 		&o.debugBaseImage, "base", o.debugBaseImage,
 		`Base image used to mount the target image. Command "bash" and "sleep" are required in the base image`)
