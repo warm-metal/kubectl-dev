@@ -24,19 +24,27 @@ Currently, the plugin can only work with **containerd**. All features work well 
 
 ## Install
 
+The Homebrew formulae is available for MacOS.
+
+```shell script
+brew install warm-metal/rc/kubectl-dev
+```
+
+You can also download the pre-build binary.
+
+```shell script
+# For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.1/kubectl-dev.darwin-amd64.tar.xz | tar -C /usr/local/bin/ -xpf -'
+
+# For Linux, run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.1/kubectl-dev.linux-amd64.xz | tar -C /usr/local/bin/ -xpf -'
+```
+
 `kubectl` is required to manage necessary objects. We also assumed that you have a k8s cluster, or a minikube cluster.
 
 The [csi-driver-image](https://github.com/warm-metal/csi-driver-image) is also needed by the `debug` command.
 You can install the predefined manifests via the `--also-apply-csi-driver` option while starting the debug command.
-Or, you can also apply custom manifests manually. 
-
-```shell script
-# For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.0/kubectl-dev.darwin-amd64.tar.xz | tar -C /usr/local/bin/ -xpf -'
-
-# For Linux, run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.0/kubectl-dev.linux-amd64.tar.xz | tar -C /usr/local/bin/ -xpf -'
-```
+Or, you can modify and apply manifests manually.  
 
 ## Usage
 
