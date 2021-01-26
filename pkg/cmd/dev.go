@@ -58,6 +58,8 @@ kubectl dev build -t foo:tag -f Dockerfile .`,
 	}
 
 	cmd.AddCommand(NewCmdDebug(o, streams), build.NewCmd(o, streams))
+	cmd.AddCommand(NewVersionCmd())
+
 	cmd.PersistentFlags().StringVar(&o.DevNamespace, "dev-namespace", "dev",
 		"Namespace in which kubectl-dev coordinators installed")
 	o.AddFlags(cmd.Flags())

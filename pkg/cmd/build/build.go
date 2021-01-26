@@ -36,6 +36,7 @@ type BuildOptions struct {
 
 	dockerfile  string
 	tag         string
+	localDir    string
 	targetStage string
 	noCache     bool
 	buildArgs   []string
@@ -105,17 +106,27 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
 	}
 
-	if len(o.tag) == 0 {
-		return fmt.Errorf("-t or --tag is required")
+	if len(o.tag) == 0 && len(o.localDir) == 0 {
+		return fmt.Errorf("set either a tag or a local path")
 	}
 
-	o.solveOpt.Exports = []buildkit.ExportEntry{
-		{
+	if len(o.tag) > 0 {
+		o.solveOpt.Exports = append(o.solveOpt.Exports, buildkit.ExportEntry{
 			Type: "image",
 			Attrs: map[string]string{
 				"name": o.tag,
 			},
-		},
+		})
+	}
+
+	if len(o.localDir) > 0 {
+		o.solveOpt.Exports = append(o.solveOpt.Exports, buildkit.ExportEntry{
+			Type: "local",
+			Attrs: map[string]string{
+				"dest": o.localDir,
+			},
+			OutputDir: o.localDir,
+		})
 	}
 
 	return nil
@@ -177,7 +188,11 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 "kubectl-dev build" use buildkitd as its build engine. Since buildkitd only support containerd or oci 
 as its worker, the build command also only support containerd as the container runtime.`,
 		Example: `# Build image in the cluster using docker parameters and options.
-kubectl dev build -t foo:latest -f Dockerfile .`,
+kubectl dev build -t foo:latest -f Dockerfile .
+
+# Build a binary and save to a local directory.
+kubectl dev build -f Dockerfile --local foo/bar/ .
+`,
 		SilenceErrors: false,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -199,6 +214,8 @@ kubectl dev build -t foo:latest -f Dockerfile .`,
 		"Name of the Dockerfile (Default is 'PATH/Dockerfile')")
 	cmd.Flags().StringVarP(&o.tag, "tag", "t", "",
 		"Name and optionally a tag in the 'name:tag' format")
+	cmd.Flags().StringVar(&o.localDir, "local", "",
+		"Build binaries instead an image and copy them to the specified path.")
 	cmd.Flags().StringVar(&o.targetStage, "target", "", "Set the target build stage to build.")
 	cmd.Flags().BoolVar(&o.noCache, "no-cache", false, "Do not use cache when building.")
 	cmd.Flags().StringSliceVar(&o.buildArgs, "build-arg", nil, "Set build-time variables.")
