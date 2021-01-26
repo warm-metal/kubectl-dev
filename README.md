@@ -30,7 +30,13 @@ The [csi-driver-image](https://github.com/warm-metal/csi-driver-image) is also n
 You can install the predefined manifests via the `--also-apply-csi-driver` option while starting the debug command.
 Or, you can also apply custom manifests manually. 
 
-You can download the binary for either Linux or MacOS from the Release page. Then put it into your `PATH` directory.
+```shell script
+# For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.0/kubectl-dev.darwin-amd64.tar.xz | tar -C /usr/local/bin/ -xpf -'
+
+# For Linux, run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.1.0/kubectl-dev.linux-amd64.tar.xz | tar -C /usr/local/bin/ -xpf -'
+```
 
 ## Usage
 
@@ -57,9 +63,9 @@ kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .
 
 ## Build
 ```shell script
-# For MacOS
+# For MacOS, run
 kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
 
-# For Linux
+# For Linux, run
 kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target linux-cli
 ```
