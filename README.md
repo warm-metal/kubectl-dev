@@ -30,10 +30,7 @@ The [csi-driver-image](https://github.com/warm-metal/csi-driver-image) is also n
 You can install the predefined manifests via the `--also-apply-csi-driver` option while starting the debug command.
 Or, you can also apply custom manifests manually. 
 
-If you have golang toolchains, run
-```go
-go install github.com/warm-metal/kubectl-dev
-```
+You can download the binary for either Linux or MacOS from the Release page. Then put it into your `PATH` directory.
 
 ## Usage
 
@@ -56,4 +53,13 @@ kubectl dev build install --minikube
 
 # Build image in cluster using docker parameters and options.
 kubectl dev build -t docker.io/warmmetal/image:tag -f test.dockerfile .
+```
+
+## Build
+```shell script
+# For MacOS
+kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
+
+# For Linux
+kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target linux-cli
 ```
