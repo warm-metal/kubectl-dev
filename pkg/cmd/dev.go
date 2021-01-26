@@ -16,12 +16,14 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/build"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/dev"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"os"
 )
 
 func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
@@ -47,13 +49,17 @@ kubectl dev build install --minikube
 
 # Build image in cluster using docker parameters and options.
 kubectl dev build -t foo:tag -f Dockerfile .`,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			clientset, err := o.ClientSet()
 			if err != nil {
-				return err
+				fmt.Fprintf(os.Stderr, "can't connect to the cluster. actions may fail. %s\n", err)
+				return
 			}
 
-			return dev.Prepare(clientset, o.DevNamespace)
+			if err = dev.Prepare(clientset, o.DevNamespace); err != nil {
+				fmt.Fprintf(os.Stderr, "can't initialize the dev runtime: %s\n", err)
+				return
+			}
 		},
 	}
 
