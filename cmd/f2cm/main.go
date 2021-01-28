@@ -5,17 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 )
 
 var waitSig = flag.Bool("w", false, "Sleep until got exit signals")
@@ -163,11 +161,11 @@ func (p syncPair) Sync(clientSet *kubernetes.Clientset) {
 		}
 
 		const fileSizeUpperBound = 1 << 20
-		err := wait.PollImmediateInfinite(time.Second, func() (done bool, err error) {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			cm, err := clientSet.CoreV1().ConfigMaps(p.Namespace).Get(context.TODO(), p.Dst, metav1.GetOptions{})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "can't get cm %s/%s: %s", p.Namespace, p.Dst, err)
-				return
+				return err
 			}
 
 			for name, content := range cm.Data {
@@ -175,17 +173,7 @@ func (p syncPair) Sync(clientSet *kubernetes.Clientset) {
 			}
 
 			_, err = clientSet.CoreV1().ConfigMaps(p.Namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
-			if err != nil {
-				if errors.IsConflict(err) {
-					return false, nil
-				}
-
-				fmt.Fprintf(os.Stderr, "can't update cm %s/%s: %s", p.Namespace, p.Src, err)
-				return
-			}
-
-			done = true
-			return
+			return err
 		})
 
 		if err != nil {

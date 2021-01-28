@@ -1,0 +1,21 @@
+syntax = "proto3";
+package session;
+
+service AppGate {
+    rpc OpenApp(stream OpenAppRequest) returns(stream AppResponse) {}
+}
+
+message App {
+    string name = 1;
+    string image = 2;
+}
+
+message OpenAppRequest {
+    App App = 1;
+    string Stdin = 2;
+}
+
+message AppResponse {
+    string Stdout = 1;
+    string Stderr = 2;
+}
