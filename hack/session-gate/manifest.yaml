@@ -11,8 +11,10 @@ metadata:
 spec:
   selector:
     app: session-gate
+  type: LoadBalancer
   ports:
     - protocol: TCP
+      name: session-gate
       port: 8001
       targetPort: 8001
 ---
@@ -33,6 +35,24 @@ rules:
       - namespaces
     verbs:
       - get
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - create
+      - list
+      - watch
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
       - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -68,6 +88,6 @@ spec:
       serviceAccountName: session-gate
       containers:
         - name: session-gate
-          image: docker.io/warmmetal/session-gate:v1
+          image: docker.io/warmmetal/session-gate:0.1.0
           ports:
             - containerPort: 8001

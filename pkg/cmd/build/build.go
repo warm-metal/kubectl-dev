@@ -23,6 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
+	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"os"
@@ -64,7 +65,8 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(o.buildkitAddrs) == 0 {
-		o.buildkitAddrs, err = fetchBuilderEndpoints(clientset)
+		o.buildkitAddrs, err = utils.FetchServiceEndpoints(clientset, builderNamespace, builderWorkloadName,
+			builderWorkloadName)
 		if err != nil {
 			return err
 		}
@@ -78,6 +80,8 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 	dockerfile := o.dockerfile
 	if len(dockerfile) == 0 {
 		dockerfile = filepath.Join(o.buildCtx, "Dockerfile")
+	} else if !filepath.IsAbs(dockerfile) {
+		dockerfile = filepath.Join(o.buildCtx, dockerfile)
 	}
 
 	o.solveOpt.LocalDirs = map[string]string{
@@ -150,10 +154,10 @@ func (o *BuildOptions) Run() (err error) {
 			break
 		}
 
-		fmt.Fprintf(os.Stderr, `can't connect to builder "%s": %s\n`, addr, err)
+		fmt.Fprintf(os.Stderr, `can't connect to builder "%s": %s`+"\n", addr, err)
 		i++
 		if i < len(o.buildkitAddrs) {
-			fmt.Fprintf(os.Stderr, `Try the next endpoint %s\n`, o.buildkitAddrs[i])
+			fmt.Fprintf(os.Stderr, `Try the next endpoint %s`+"\n", o.buildkitAddrs[i])
 		}
 	}
 

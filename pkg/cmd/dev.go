@@ -18,6 +18,7 @@ package cmd
 import (
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/warm-metal/kubectl-dev/pkg/cmd/app"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/build"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/dev"
@@ -63,7 +64,11 @@ kubectl dev build -t foo:tag -f Dockerfile .`,
 		},
 	}
 
-	cmd.AddCommand(NewCmdDebug(o, streams), build.NewCmd(o, streams))
+	cmd.AddCommand(
+		NewCmdDebug(o, streams),
+		build.NewCmd(o, streams),
+		app.NewCmd(o, streams),
+	)
 	cmd.AddCommand(NewVersionCmd())
 
 	cmd.PersistentFlags().StringVar(&o.DevNamespace, "dev-namespace", "dev",

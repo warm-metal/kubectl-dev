@@ -9,7 +9,8 @@ import (
 
 const buildkitdToml = `debug = true
 # root is where all buildkit state is stored.
-root = "/var/lib/buildkit"
+root = "{{.BuildkitRoot}}"
+snapshot-root = "{{.SnapshotRoot}}"
 # insecure-entitlements allows insecure entitlements, disabled by default.
 insecure-entitlements = [ "network.host", "security.insecure" ]
 

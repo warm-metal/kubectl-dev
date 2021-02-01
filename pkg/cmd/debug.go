@@ -109,7 +109,7 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	kind, name, podTmpl, err := o.fetchPod(o.namespace, args)
+	kind, name, labels, podTmpl, err := o.fetchPod(o.namespace, args)
 	if err != nil {
 		return err
 	}
@@ -119,6 +119,10 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 		labelKind:      kind,
 		labelName:      name,
 		labelContainer: o.container,
+	}
+
+	for k, v := range labels {
+		o.labels[k] = v
 	}
 
 	if len(podTmpl.Containers) == 1 && len(o.container) == 0 {
@@ -173,7 +177,7 @@ func (o *DebugOptions) loadDefaultTemplate() {
 
 func (o *DebugOptions) fetchPod(
 	namespace string, kindAndName []string,
-) (kind, name string, podTmpl *corev1.PodSpec, err error) {
+) (kind, name string, labels map[string]string, podTmpl *corev1.PodSpec, err error) {
 	result := resource.NewBuilder(o.Raw()).
 		Unstructured().
 		ContinueOnError().
@@ -225,6 +229,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &deploy.Spec.Template.Spec
+			labels = deploy.Spec.Template.Labels
 		case appsv1.GroupName:
 			deploy, failed := clientset.AppsV1().Deployments(info.Namespace).Get(ctx, info.Name, opt)
 			if failed != nil {
@@ -233,6 +238,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &deploy.Spec.Template.Spec
+			labels = deploy.Spec.Template.Labels
 		default:
 			panic(info.Mapping.GroupVersionKind)
 		}
@@ -248,6 +254,7 @@ func (o *DebugOptions) fetchPod(
 		}
 
 		podTmpl = &sfs.Spec.Template.Spec
+		labels = sfs.Spec.Template.Labels
 	case "Job":
 		if info.Mapping.GroupVersionKind.Group != batchv1.GroupName {
 			panic(infos[0].Mapping.GroupVersionKind)
@@ -260,6 +267,7 @@ func (o *DebugOptions) fetchPod(
 		}
 
 		podTmpl = &job.Spec.Template.Spec
+		labels = job.Spec.Template.Labels
 	case "CronJob":
 		if info.Mapping.GroupVersionKind.Group != batchv1.GroupName {
 			panic(info.Mapping.GroupVersionKind)
@@ -272,6 +280,7 @@ func (o *DebugOptions) fetchPod(
 		}
 
 		podTmpl = &job.Spec.JobTemplate.Spec.Template.Spec
+		labels = job.Spec.JobTemplate.Spec.Template.Labels
 	case "DaemonSet":
 		switch info.Mapping.GroupVersionKind.Group {
 		case extensionsv1beta1.GroupName:
@@ -282,6 +291,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &ds.Spec.Template.Spec
+			labels = ds.Spec.Template.Labels
 		case appsv1.GroupName:
 			ds, failed := clientset.AppsV1().DaemonSets(info.Namespace).Get(ctx, info.Name, opt)
 			if failed != nil {
@@ -290,6 +300,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &ds.Spec.Template.Spec
+			labels = ds.Spec.Template.Labels
 		default:
 			panic(info.Mapping.GroupVersionKind)
 		}
@@ -303,6 +314,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &rs.Spec.Template.Spec
+			labels = rs.Spec.Template.Labels
 		case appsv1.GroupName:
 			rs, failed := clientset.AppsV1().ReplicaSets(info.Namespace).Get(ctx, info.Name, opt)
 			if failed != nil {
@@ -311,6 +323,7 @@ func (o *DebugOptions) fetchPod(
 			}
 
 			podTmpl = &rs.Spec.Template.Spec
+			labels = rs.Spec.Template.Labels
 		default:
 			panic(info.Mapping.GroupVersionKind)
 		}
@@ -326,6 +339,7 @@ func (o *DebugOptions) fetchPod(
 		}
 
 		podTmpl = &pod.Spec
+		labels = pod.Labels
 	default:
 		err = xerrors.Errorf("object %s/%s is not supported", info.Mapping.GroupVersionKind, info.Name)
 		return
