@@ -111,23 +111,21 @@ func FetchServiceEndpoints(clientset *kubernetes.Clientset, namespace, service, 
 		}
 	}
 
-	addrs = append(addrs, fmt.Sprintf("tcp://%s:%d", svc.Spec.ClusterIP, svcPort))
-	if nodePort == 0 {
-		return
-	}
+	if nodePort > 0 {
+		nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
+		}
 
-	nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
-	}
-
-	for _, node := range nodes.Items {
-		for _, addr := range node.Status.Addresses {
-			if len(addr.Address) > 0 {
-				addrs = append(addrs, fmt.Sprintf("tcp://%s:%d", addr.Address, nodePort))
+		for _, node := range nodes.Items {
+			for _, addr := range node.Status.Addresses {
+				if len(addr.Address) > 0 {
+					addrs = append(addrs, fmt.Sprintf("tcp://%s:%d", addr.Address, nodePort))
+				}
 			}
 		}
 	}
 
+	addrs = append(addrs, fmt.Sprintf("tcp://%s:%d", svc.Spec.ClusterIP, svcPort))
 	return
 }

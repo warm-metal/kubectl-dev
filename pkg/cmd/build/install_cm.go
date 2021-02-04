@@ -27,7 +27,10 @@ insecure-entitlements = [ "network.host", "security.insecure" ]
   enabled = true
   platforms = [ "linux/amd64", "linux/arm64" ]
   namespace = "k8s.io"
-  gc = false
+  gc = true
+  [[worker.containerd.gcpolicy]]
+    keepBytes = 10240000000
+	keepDuration = 3600
 `
 
 const buildkitdTomlConfigMap = "buildkitd.toml"

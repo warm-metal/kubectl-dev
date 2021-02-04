@@ -4,27 +4,33 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/moby/term"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/session"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
 	"io"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/klog"
 	"net/url"
 	"os"
+	"os/signal"
 	"time"
 )
 
 type AppOptions struct {
 	*opts.GlobalOptions
-	streams genericclioptions.IOStreams
-	name    string
+	genericclioptions.IOStreams
+	name string
 
 	image     string
 	command   []string
 	hostPaths []string
+
+	stdInFd, stdOutFd uintptr
 }
 
 func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
@@ -40,6 +46,19 @@ func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	o.command = args[1:]
+
+	if inFd, isTerminal := term.GetFdInfo(o.In); !isTerminal {
+		return xerrors.Errorf("can't execute the command without a terminal")
+	} else {
+		o.stdInFd = inFd
+	}
+
+	if outFd, isTerminal := term.GetFdInfo(o.Out); !isTerminal {
+		return xerrors.Errorf("can't execute the command without a terminal")
+	} else {
+		o.stdOutFd = outFd
+	}
+
 	return nil
 }
 
@@ -53,8 +72,8 @@ func (o *AppOptions) Run() error {
 		return err
 	}
 
-	endpoints, err := utils.FetchServiceEndpoints(clientset,
-		o.GlobalOptions.DevNamespace, "session-gate", "session-gate")
+	endpoints, err := utils.FetchServiceEndpoints(clientset, o.GlobalOptions.DevNamespace,
+		"session-gate", "session-gate")
 	if err != nil {
 		return err
 	}
@@ -95,7 +114,8 @@ func (o *AppOptions) Run() error {
 			Image:    o.image,
 			Hostpath: o.hostPaths,
 		},
-		Stdin: o.command,
+		Stdin:        o.command,
+		TerminalSize: getSize(o.stdOutFd),
 	})
 
 	if err != nil {
@@ -108,7 +128,7 @@ func (o *AppOptions) Run() error {
 	stdin := make(chan string)
 
 	go func() {
-		stdReader := bufio.NewReader(o.streams.In)
+		stdReader := bufio.NewReader(o.In)
 		defer close(stdin)
 		for {
 			line, prefix, err := stdReader.ReadLine()
@@ -131,10 +151,8 @@ func (o *AppOptions) Run() error {
 	}()
 
 	stdout := make(chan string)
-	stderr := make(chan string)
 	go func() {
 		defer close(stdout)
-		defer close(stderr)
 		for {
 			resp, err := app.Recv()
 			if err != nil {
@@ -150,12 +168,21 @@ func (o *AppOptions) Run() error {
 			if len(resp.Stdout) > 0 {
 				stdout <- resp.Stdout
 			}
-
-			if len(resp.Stderr) > 0 {
-				stderr <- resp.Stderr
-			}
 		}
 	}()
+
+	state, err := term.MakeRaw(o.stdInFd)
+	if err != nil {
+		return xerrors.Errorf("can't initialize terminal: %s", err)
+	}
+
+	defer func() {
+		term.RestoreTerminal(o.stdInFd, state)
+	}()
+
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, unix.SIGWINCH)
+	defer signal.Stop(winch)
 
 	for {
 		select {
@@ -165,35 +192,39 @@ func (o *AppOptions) Run() error {
 			}
 
 			return err
+		case <-winch:
+			size := getSize(o.stdOutFd)
+			if err = app.Send(&session.OpenAppRequest{TerminalSize: size}); err != nil {
+				return err
+			}
 		case in, ok := <-stdin:
 			if ok {
-				err = app.Send(&session.OpenAppRequest{
-					Stdin: []string{in},
-				})
-				if err != nil {
+				if err = app.Send(&session.OpenAppRequest{Stdin: []string{in}}); err != nil {
 					return err
 				}
 			}
 		case out, ok := <-stdout:
 			if ok {
-				if _, err := o.streams.Out.Write([]byte(out)); err != nil {
-					fmt.Fprintf(os.Stderr, "can't write to stdout: %s", err)
-				}
-			}
-		case err, ok := <-stderr:
-			if ok {
-				if _, err := o.streams.ErrOut.Write([]byte(err)); err != nil {
-					fmt.Fprintf(os.Stderr, "can't write to stderr: %s", err)
-				}
+				fmt.Print(out)
 			}
 		}
 	}
 }
 
+func getSize(fd uintptr) *session.TerminalSize {
+	winsize, err := term.GetWinsize(fd)
+	if err != nil {
+		klog.Errorf("unable to get terminal size: %v", err)
+		return nil
+	}
+
+	return &session.TerminalSize{Width: uint32(winsize.Width), Height: uint32(winsize.Height)}
+}
+
 func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
 	o := &AppOptions{
 		GlobalOptions: opts,
-		streams:       streams,
+		IOStreams:     streams,
 	}
 
 	var cmd = &cobra.Command{
@@ -219,6 +250,8 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 
 	cmd.Flags().StringVar(&o.name, "name", "", "App name. A random name would be used if not set.")
 	cmd.Flags().StringSliceVar(&o.hostPaths, "hostpath", nil, "Host paths to be mounted")
+
+	// FIXME use http_proxy
 
 	o.AddFlags(cmd.Flags())
 	return cmd

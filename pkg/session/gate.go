@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"google.golang.org/grpc"
@@ -18,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/client-go/util/exec"
 	"k8s.io/klog"
 	"strings"
 	"time"
@@ -100,59 +102,65 @@ func getCurrentNamespace() string {
 	panic("can't fetch the current namespace")
 }
 
-func (t *terminalGate) openSession(pod string, cmd []string, s AppGate_OpenAppServer) (err error) {
-	// FIXME count sessions to the same app
+type clientReader struct {
+	s      AppGate_OpenAppServer
+	size   remotecommand.TerminalSize
+	stdin  chan string
+	closed bool
+}
 
-	req := t.clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(pod).
-		Namespace(t.opts.Namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: appContainer,
-			Command:   append([]string{"chroot", "/app-root"}, cmd...),
-			Stdin:     true,
-			Stdout:    true,
-			Stderr:    true,
-			TTY:       true,
-		}, scheme.ParameterCodec)
+func (r *clientReader) Close() {
+	r.closed = true
+}
 
-	exec, err := remotecommand.NewSPDYExecutor(t.config, "POST", req.URL())
-	if err != nil {
-		klog.Errorf("can't create executor: %s", err)
+func (r *clientReader) loop() {
+	r.stdin = make(chan string)
+	defer close(r.stdin)
+
+	for {
+		if r.closed {
+			return
+		}
+
+		req, err := r.s.Recv()
+		if err != nil {
+			klog.Errorf("can't read stdin: %s", err)
+			return
+		}
+
+		if req.TerminalSize != nil {
+			r.size.Width = uint16(req.TerminalSize.Width)
+			r.size.Height = uint16(req.TerminalSize.Height)
+		}
+
+		if len(req.Stdin) > 0 {
+			if len(req.Stdin) != 1 {
+				klog.Errorf("invalid input %#v", req.Stdin)
+				return
+			}
+			r.stdin <- req.Stdin[0]
+		}
+	}
+}
+
+func (r clientReader) Next() *remotecommand.TerminalSize {
+	return &r.size
+}
+
+func (r *clientReader) Read(p []byte) (n int, err error) {
+	in, ok := <-r.stdin
+	if !ok {
+		err = io.EOF
 		return
 	}
 
-	klog.Infof("open session to Pod %s", pod)
-	stdin, stdout, stderr := genIOStreams(s)
-	err = exec.Stream(remotecommand.StreamOptions{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Stderr: stderr,
-		Tty:    true,
-	})
-
-	return
-}
-
-type reader struct {
-	s AppGate_OpenAppServer
-}
-
-func (r reader) Read(p []byte) (n int, err error) {
-	req, err := r.s.Recv()
-	if err != nil {
-		klog.Errorf("can't read stdin: %s", err)
-		return
-	}
-
-	if len(p) < len(req.Stdin[0]) {
+	if len(p) < len(in) {
 		err = io.ErrShortBuffer
-		klog.Errorf("buffer too small %d, %d", len(p), len(req.Stdin[0]))
+		klog.Errorf("buffer too small %d, %d", len(p), len(in))
 		return
 	}
 
-	n = copy(p, req.Stdin[0])
+	n = copy(p, in)
 	return
 }
 
@@ -161,6 +169,7 @@ type stdoutWriter struct {
 }
 
 func (w stdoutWriter) Write(p []byte) (n int, err error) {
+	fmt.Print(hex.Dump(p))
 	err = w.s.Send(&AppResponse{
 		Stdout: string(p),
 	})
@@ -174,26 +183,45 @@ func (w stdoutWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
-type stderrWriter struct {
-	s AppGate_OpenAppServer
+func genIOStreams(s AppGate_OpenAppServer, initSize *TerminalSize) (reader *clientReader, stdout io.Writer) {
+	in := clientReader{s: s, size: remotecommand.TerminalSize{
+		Width:  uint16(initSize.Width),
+		Height: uint16(initSize.Height),
+	}}
+	go in.loop()
+	return &in, &stdoutWriter{s}
 }
 
-func (w stderrWriter) Write(p []byte) (n int, err error) {
-	err = w.s.Send(&AppResponse{
-		Stderr: string(p),
-	})
+func (t *terminalGate) openSession(pod string, cmd []string, in *clientReader, stdout io.Writer) (err error) {
+	// FIXME count sessions to the same app
+	req := t.clientset.CoreV1().RESTClient().Post().
+		Resource("pods").Name(pod).Namespace(t.opts.Namespace).
+		SubResource("exec")
+	req.VersionedParams(&corev1.PodExecOptions{
+		Container: appContainer,
+		Command:   append([]string{"chroot", "/app-root"}, cmd...),
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    false,
+		TTY:       true,
+	}, scheme.ParameterCodec)
 
+	exec, err := remotecommand.NewSPDYExecutor(t.config, "POST", req.URL())
 	if err != nil {
-		klog.Errorf("can't write stderr: %s", err)
+		klog.Errorf("can't create executor: %s", err)
 		return
 	}
 
-	n = len(p)
-	return
-}
+	klog.Infof("open session to Pod %s", pod)
 
-func genIOStreams(s AppGate_OpenAppServer) (stdin io.Reader, stdout, stderr io.Writer) {
-	return &reader{s}, &stdoutWriter{s}, &stderrWriter{s}
+	err = exec.Stream(remotecommand.StreamOptions{
+		Stdin:             in,
+		Stdout:            stdout,
+		Tty:               true,
+		TerminalSizeQueue: in,
+	})
+
+	return
 }
 
 func (t *terminalGate) OpenApp(s AppGate_OpenAppServer) error {
@@ -211,7 +239,10 @@ func (t *terminalGate) OpenApp(s AppGate_OpenAppServer) error {
 		return status.Error(codes.InvalidArgument, "App.Image is required in the first request.")
 	}
 	if len(req.Stdin) == 0 {
-		return status.Error(codes.InvalidArgument, "App.Stdin is required.")
+		return status.Error(codes.InvalidArgument, "Stdin is required.")
+	}
+	if req.TerminalSize == nil {
+		return status.Error(codes.InvalidArgument, "TerminalSize is required.")
 	}
 
 	ctx, cancel := timeoutContext()
@@ -259,9 +290,16 @@ func (t *terminalGate) OpenApp(s AppGate_OpenAppServer) error {
 	}
 
 	klog.Infof("create session to app %s", req.App.Name)
-	err = t.openSession(pod.Name, req.Stdin, s)
-	if err != nil {
-		klog.Errorf("can't open stream of app %s: %#v", req.App.Name, err)
+	stdin, stdout := genIOStreams(s, req.TerminalSize)
+	defer stdin.Close()
+
+	if err = t.openSession(pod.Name, req.Stdin, stdin, stdout); err != nil {
+		if details, ok := err.(exec.CodeExitError); ok {
+			klog.Errorf("can't open stream of app %s: %s", req.App.Name, details.Err.Error())
+		} else {
+			klog.Errorf("can't open stream of app %s: %#v", req.App.Name, err)
+		}
+
 		return status.Error(codes.Unavailable, err.Error())
 	}
 

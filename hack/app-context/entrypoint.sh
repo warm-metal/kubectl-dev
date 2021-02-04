@@ -17,4 +17,8 @@ mount -o rbind /run ${APP_ROOT}/run
 mkdir -p ${APP_ROOT}/root
 mount -o rbind /root ${APP_ROOT}/root
 
+mkdir -p ${APP_ROOT}/etc
+[[ -f "${APP_ROOT}/etc/resolv.conf" ]] || touch "${APP_ROOT}/etc/resolv.conf"
+mount -o bind /etc/resolv.conf ${APP_ROOT}/etc/resolv.conf
+
 tail -f /dev/null
