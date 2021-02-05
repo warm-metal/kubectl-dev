@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"google.golang.org/grpc"
@@ -115,7 +114,10 @@ func (r *clientReader) Close() {
 
 func (r *clientReader) loop() {
 	r.stdin = make(chan string)
-	defer close(r.stdin)
+	defer func() {
+		r.closed = true
+		close(r.stdin)
+	}()
 
 	for {
 		if r.closed {
@@ -144,6 +146,10 @@ func (r *clientReader) loop() {
 }
 
 func (r clientReader) Next() *remotecommand.TerminalSize {
+	if r.closed {
+		return nil
+	}
+
 	return &r.size
 }
 
@@ -169,7 +175,6 @@ type stdoutWriter struct {
 }
 
 func (w stdoutWriter) Write(p []byte) (n int, err error) {
-	fmt.Print(hex.Dump(p))
 	err = w.s.Send(&AppResponse{
 		Stdout: string(p),
 	})
@@ -296,11 +301,11 @@ func (t *terminalGate) OpenApp(s AppGate_OpenAppServer) error {
 	if err = t.openSession(pod.Name, req.Stdin, stdin, stdout); err != nil {
 		if details, ok := err.(exec.CodeExitError); ok {
 			klog.Errorf("can't open stream of app %s: %s", req.App.Name, details.Err.Error())
+			return status.Errorf(codes.Aborted, "%d", details.Code)
 		} else {
 			klog.Errorf("can't open stream of app %s: %#v", req.App.Name, err)
+			return status.Error(codes.Unavailable, err.Error())
 		}
-
-		return status.Error(codes.Unavailable, err.Error())
 	}
 
 	return nil

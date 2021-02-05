@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/util/exec"
 	"os"
 )
 
@@ -28,6 +29,10 @@ func main() {
 
 	root := cmd.NewCmdDev(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
 	if err := root.Execute(); err != nil {
+		if exit, ok := err.(exec.CodeExitError); ok {
+			os.Exit(exit.Code)
+		}
+
 		os.Exit(1)
 	}
 }

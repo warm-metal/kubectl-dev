@@ -12,12 +12,16 @@ import (
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/util/exec"
 	"k8s.io/klog"
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 )
 
@@ -156,12 +160,20 @@ func (o *AppOptions) Run() error {
 		for {
 			resp, err := app.Recv()
 			if err != nil {
-				if err != io.EOF {
-					errCh <- xerrors.Errorf("can't read the remote response:%s", err)
-				} else {
+				if err == io.EOF {
 					errCh <- err
+					return
 				}
 
+				st, ok := status.FromError(err)
+				if ok && st.Code() == codes.Aborted {
+					if code, failed := strconv.Atoi(st.Message()); failed == nil {
+						errCh <- exec.CodeExitError{Code: code, Err: err}
+						return
+					}
+				}
+
+				errCh <- xerrors.Errorf("can't read the remote response:%s", err)
 				return
 			}
 
@@ -228,11 +240,12 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 	}
 
 	var cmd = &cobra.Command{
-		Use:          "app [OPTIONS] image -- command",
-		Short:        "Run an app.",
-		Long:         ``,
-		Example:      ``,
-		SilenceUsage: true,
+		Use:           "app [OPTIONS] image -- command",
+		Short:         "Run an app.",
+		Long:          ``,
+		Example:       ``,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
