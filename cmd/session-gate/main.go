@@ -9,7 +9,6 @@ import (
 )
 
 var addr = flag.String("addr", ":8001", "TCP address to listen on")
-var ns = flag.String("app-namespace", "app", "Namespace apps to be installed")
 
 func init() {
 	klog.InitFlags(flag.CommandLine)
@@ -20,9 +19,7 @@ func main() {
 	klog.LogToStderr(true)
 	defer klog.Flush()
 	s := grpc.NewServer()
-	session.PrepareGate(s, &session.GateOptions{
-		Namespace: *ns,
-	})
+	session.PrepareGate(s)
 
 	l, err := net.Listen("tcp", *addr)
 	if err != nil {

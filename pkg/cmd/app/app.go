@@ -17,7 +17,7 @@ import (
 	"io"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/util/exec"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"net/url"
 	"os"
 	"os/signal"
@@ -28,13 +28,14 @@ import (
 type AppOptions struct {
 	*opts.GlobalOptions
 	genericclioptions.IOStreams
-	name string
 
-	image     string
-	command   []string
-	hostPaths []string
+	name      string
+	namespace string
+
+	command []string
 
 	stdInFd, stdOutFd uintptr
+	appCli            session.AppGateClient
 }
 
 func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
@@ -43,13 +44,11 @@ func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
 		return xerrors.Errorf("no enough parameters: %#v", args)
 	}
 
-	o.image = args[0]
-	if len(o.image) == 0 {
-		cmd.SilenceUsage = false
-		return xerrors.Errorf("the first argument must be an image")
+	if o.Raw().Namespace != nil && len(*o.Raw().Namespace) > 0 {
+		o.namespace = *o.Raw().Namespace
 	}
 
-	o.command = args[1:]
+	o.command = args
 
 	if inFd, isTerminal := term.GetFdInfo(o.In); !isTerminal {
 		return xerrors.Errorf("can't execute the command without a terminal")
@@ -63,21 +62,12 @@ func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.stdOutFd = outFd
 	}
 
-	return nil
-}
-
-func (o *AppOptions) Validate() error {
-	return nil
-}
-
-func (o *AppOptions) Run() error {
 	clientset, err := o.ClientSet()
 	if err != nil {
 		return err
 	}
 
-	endpoints, err := utils.FetchServiceEndpoints(clientset, o.GlobalOptions.DevNamespace,
-		"session-gate", "session-gate")
+	endpoints, err := utils.FetchServiceEndpoints(clientset, "cliapp-system", "session-gate", "session-gate")
 	if err != nil {
 		return err
 	}
@@ -106,17 +96,24 @@ func (o *AppOptions) Run() error {
 		return xerrors.Errorf("all remote endpoints are unavailable")
 	}
 
-	appCli := session.NewAppGateClient(cc)
-	app, err := appCli.OpenApp(context.TODO())
+	o.appCli = session.NewAppGateClient(cc)
+	return nil
+}
+
+func (o *AppOptions) Validate() error {
+	return nil
+}
+
+func (o *AppOptions) Run() error {
+	app, err := o.appCli.OpenApp(context.TODO())
 	if err != nil {
 		return xerrors.Errorf("can't open app session: %s", err)
 	}
 
 	err = app.Send(&session.OpenAppRequest{
 		App: &session.App{
-			Name:     o.name,
-			Image:    o.image,
-			Hostpath: o.hostPaths,
+			Name:      o.name,
+			Namespace: o.namespace,
 		},
 		Stdin:        o.command,
 		TerminalSize: getSize(o.stdOutFd),
@@ -240,10 +237,12 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 	}
 
 	var cmd = &cobra.Command{
-		Use:           "app [OPTIONS] image -- command",
-		Short:         "Run an app.",
-		Long:          ``,
-		Example:       ``,
+		Use:   "app [OPTIONS] command",
+		Short: "Run a CliApp.",
+		Long:  `Run a installed CliApp`,
+		Example: `# Run an app
+
+`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -262,10 +261,12 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 	}
 
 	cmd.Flags().StringVar(&o.name, "name", "", "App name. A random name would be used if not set.")
-	cmd.Flags().StringSliceVar(&o.hostPaths, "hostpath", nil, "Host paths to be mounted")
-
-	// FIXME use http_proxy
-
 	o.AddFlags(cmd.Flags())
+
+	cmd.AddCommand(
+		newAppInstallCmd(opts, streams),
+		newAppUninstallCmd(opts, streams),
+		newAppListCmd(opts, streams),
+	)
 	return cmd
 }

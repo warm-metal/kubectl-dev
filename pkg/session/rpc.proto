@@ -6,10 +6,8 @@ service AppGate {
 }
 
 message App {
-    // optional
     string name = 1;
-    string image = 2;
-    repeated string hostpath = 3;
+    string namespace = 2;
 }
 
 message TerminalSize {
