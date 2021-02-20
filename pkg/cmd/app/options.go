@@ -55,8 +55,8 @@ kubectl-dev app -n %s --name %s -- $@`
 func (o *shortcutInstallOptions) installShortcut(app, namespace string) error {
 	for _, path := range []string{o.appPath, o.shortcutPath} {
 		_, err := os.Lstat(path)
-		if !os.IsNotExist(err) {
-			return xerrors.Errorf(`"%s" already exists`, path)
+		if err != nil && !os.IsNotExist(err) && !os.IsExist(err) {
+			return xerrors.Errorf(`"%s" %s`, path, err)
 		}
 	}
 
@@ -65,7 +65,11 @@ func (o *shortcutInstallOptions) installShortcut(app, namespace string) error {
 		return err
 	}
 
-	if err := os.Link(o.appPath, o.shortcutPath); err != nil {
+	if _, err := os.Lstat(o.shortcutPath); err == nil {
+		os.Remove(o.shortcutPath)
+	}
+
+	if err := os.Symlink(o.appPath, o.shortcutPath); err != nil {
 		os.Remove(o.appPath)
 		return err
 	}

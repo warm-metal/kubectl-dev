@@ -27,8 +27,8 @@ type appInstallOptions struct {
 	hostPaths []string
 	envs      []string
 
-	distrio string
-	shell   string
+	distro string
+	shell  string
 
 	useHttpProxy bool
 
@@ -55,10 +55,26 @@ func (o *appInstallOptions) Complete(cmd *cobra.Command, args []string) error {
 			Command:     args,
 			HostPath:    o.hostPaths,
 			Env:         o.envs,
-			Distrio:     o.distrio,
-			Shell:       o.shell,
 			TargetPhase: appcorev1.CliAppPhaseRest,
 		},
+	}
+
+	if len(o.distro) > 0 {
+		distro, err := utils.ValidateDistro(o.distro)
+		if err != nil {
+			return err
+		}
+
+		o.app.Spec.Distro = distro
+	}
+
+	if len(o.shell) > 0 {
+		shell, err := utils.ValidateShell(o.shell)
+		if err != nil {
+			return err
+		}
+
+		o.app.Spec.Shell = shell
 	}
 
 	if o.useHttpProxy {
@@ -121,7 +137,7 @@ func newAppInstallCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStre
 kubectl dev app install --name ctr -n default --image docker.io/warmmetal/ctr:v1 --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
 
 # Install an App from a Dockerfile
-kubectl dev app install --name ctr -n default --dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile --hostpath /var/run/containerd/containerd.sock
+kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
 `,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -145,9 +161,9 @@ kubectl dev app install --name ctr -n default --dockerfile https://raw.githubuse
 	cmd.Flags().StringSliceVar(&o.hostPaths, "hostpath", nil, "Host paths to be mounted")
 	cmd.Flags().StringSliceVar(&o.envs, "env", nil, "Environment variables")
 	cmd.Flags().BoolVar(&o.useHttpProxy, "use-proxy", false, "If set, use current HTTP proxy settings.")
-	cmd.Flags().StringVar(&o.distrio, "distrio", "",
-		"Linux distrio that the app prefer. The default value is alpine.")
-	cmd.Flags().StringVar(&o.distrio, "shell", "",
+	cmd.Flags().StringVar(&o.distro, "distro", "",
+		"Linux distro that the app prefer. The default value is alpine.")
+	cmd.Flags().StringVar(&o.shell, "shell", "",
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
 	cmd.Flags().StringVar(&o.shortcutRoot, "install-base", o.shortcutRoot,
 		"Directory where app to be installed. It should be one of the PATH.")

@@ -26,6 +26,7 @@ import (
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,6 @@ type BuildOptions struct {
 	noCache     bool
 	buildArgs   []string
 
-	buildCtx string
 	solveOpt buildkit.SolveOpt
 
 	buildkitAddrs []string
@@ -51,14 +51,14 @@ type BuildOptions struct {
 func newBuilderOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *BuildOptions {
 	return &BuildOptions{
 		GlobalOptions: opts,
-		buildCtx:      ".",
 		solveOpt: buildkit.SolveOpt{
-			Frontend: "dockerfile.v0",
+			Frontend:      "dockerfile.v0",
+			FrontendAttrs: make(map[string]string),
 		},
 	}
 }
 
-func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
+func (o *BuildOptions) Complete(_ *cobra.Command, args []string) error {
 	clientset, err := o.ClientSet()
 	if err != nil {
 		return err
@@ -70,35 +70,6 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	buildCtx := "."
-	if len(args) > 0 {
-		o.buildCtx = args[0]
-	}
-
-	dockerfile := o.dockerfile
-	if len(dockerfile) == 0 {
-		dockerfile = filepath.Join(o.buildCtx, "Dockerfile")
-	} else if !filepath.IsAbs(dockerfile) {
-		dockerfile = filepath.Join(o.buildCtx, dockerfile)
-	}
-
-	o.solveOpt.LocalDirs = map[string]string{
-		"context":    buildCtx,
-		"dockerfile": filepath.Dir(dockerfile),
-	}
-
-	o.solveOpt.FrontendAttrs = map[string]string{
-		"filename": filepath.Base(dockerfile),
-	}
-
-	if len(o.targetStage) > 0 {
-		o.solveOpt.FrontendAttrs["target"] = o.targetStage
-	}
-
-	if o.noCache {
-		o.solveOpt.FrontendAttrs["no-cache"] = ""
 	}
 
 	for _, buildArg := range o.buildArgs {
@@ -131,6 +102,38 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 			},
 			OutputDir: o.localDir,
 		})
+	}
+
+	if _, err := url.Parse(o.dockerfile); err == nil {
+		o.solveOpt.FrontendAttrs["context"] = o.dockerfile
+		return nil
+	}
+
+	buildCtx := "."
+	if len(args) > 0 {
+		buildCtx = args[0]
+	}
+
+	dockerfile := o.dockerfile
+	if len(dockerfile) == 0 {
+		dockerfile = filepath.Join(buildCtx, "Dockerfile")
+	} else if !filepath.IsAbs(dockerfile) {
+		dockerfile = filepath.Join(buildCtx, dockerfile)
+	}
+
+	o.solveOpt.LocalDirs = map[string]string{
+		"context":    buildCtx,
+		"dockerfile": filepath.Dir(dockerfile),
+	}
+
+	o.solveOpt.FrontendAttrs["filename"] = filepath.Base(dockerfile)
+
+	if len(o.targetStage) > 0 {
+		o.solveOpt.FrontendAttrs["target"] = o.targetStage
+	}
+
+	if o.noCache {
+		o.solveOpt.FrontendAttrs["no-cache"] = ""
 	}
 
 	return nil

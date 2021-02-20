@@ -1,11 +1,11 @@
-.PHONY: session-gate
-session-gate:
-	kubectl dev build -f hack/session-gate/Dockerfile -t docker.io/warmmetal/session-gate:v0.1.0
+.PHONY: default
+default:
+	go build -o _output/kubectl-dev ./cmd/dev
 
-.PHONY: dev
+.PHONY: mac
 mac:
 	kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
 
-.PHONY: dev
+.PHONY: linux
 linux:
 	kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target linux-cli
