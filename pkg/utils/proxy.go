@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"golang.org/x/xerrors"
 	corev1 "k8s.io/api/core/v1"
 	"net"
@@ -40,6 +41,20 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 			Name:  strings.ToUpper(env),
 			Value: v,
 		})
+	}
+
+	return
+}
+
+func GetSysProxyEnvs() (envs []string, err error) {
+	vars, err := GetSysProxy()
+	if err != nil {
+		return
+	}
+
+	envs = make([]string, 0, len(vars))
+	for _, v := range vars {
+		envs = append(envs, fmt.Sprintf("%s=%s", v.Name, v.Value))
 	}
 
 	return

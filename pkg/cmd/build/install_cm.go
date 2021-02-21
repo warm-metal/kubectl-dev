@@ -9,7 +9,8 @@ import (
 
 const buildkitdToml = `debug = true
 # root is where all buildkit state is stored.
-root = "/var/lib/buildkit"
+root = "{{.BuildkitRoot}}"
+snapshot-root = "{{.SnapshotRoot}}"
 # insecure-entitlements allows insecure entitlements, disabled by default.
 insecure-entitlements = [ "network.host", "security.insecure" ]
 
@@ -26,7 +27,10 @@ insecure-entitlements = [ "network.host", "security.insecure" ]
   enabled = true
   platforms = [ "linux/amd64", "linux/arm64" ]
   namespace = "k8s.io"
-  gc = false
+  gc = true
+  [[worker.containerd.gcpolicy]]
+    keepBytes = 10240000000
+	keepDuration = 3600
 `
 
 const buildkitdTomlConfigMap = "buildkitd.toml"

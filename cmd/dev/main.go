@@ -16,18 +16,54 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"github.com/spf13/pflag"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/util/exec"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
 	flags := pflag.NewFlagSet("kubectl-dev", pflag.ExitOnError)
 	pflag.CommandLine = flags
 
-	root := cmd.NewCmdDev(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
-	if err := root.Execute(); err != nil {
-		os.Exit(1)
+	signCh := make(chan os.Signal, 3)
+	defer close(signCh)
+	signal.Ignore(syscall.SIGPIPE)
+	signal.Notify(signCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	errCh := make(chan error)
+	go func() {
+		defer close(errCh)
+		root := cmd.NewCmdDev(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr})
+		errCh <- root.ExecuteContext(ctx)
+	}()
+
+	for {
+		select {
+		case err, ok := <-errCh:
+			if !ok {
+				break
+			}
+
+			signal.Stop(signCh)
+
+			if exit, ok := err.(exec.CodeExitError); ok {
+				os.Exit(exit.Code)
+			}
+
+			os.Exit(1)
+			return
+
+		case <-signCh:
+			signal.Stop(signCh)
+			cancel()
+		}
 	}
 }

@@ -8,19 +8,21 @@ No runtime changing and management. Also, no out-of-date garbage deps. All these
 
 Currently, the plugin can only work with **containerd**. All features work well in a minikube cluster.
 
-> How to debug failed apps efficiently?
+### How to debug failed apps efficiently?
 
-> If a app failed, it could crash, wait for deps and has no responding, fails on some libraries, 
->say some .so files, or get wrong mounted ConfigMaps or Secrets.
->K8s provides nothing to figure them out. The only thing may help is logs your app printed.
->
-> The `debug` command provides a new way to start the workload. It creates an identical Pod in the same namespace,
->except the image of the target container. `debug` opens a bash session after the Pod started. 
->The target image is mount to `/image`. Its original parameters are set in the environment variable `IMAGE_ARGS`.
->You can check the original image context or debug the binary in the opened session.
->
-> This command also supports Docker as container runtime. But, it needs a few more steps to install deps.
->See [Install csi-driver-image on Docker](https://github.com/warm-metal/csi-driver-image#docker).
+If a app failed, it could crash, wait for deps and has no responding, fails on some libraries, 
+say some .so files, or get wrong mounted ConfigMaps or Secrets.
+K8s provides nothing to figure them out. The only thing may help is logs your app printed.
+
+The `debug` command provides a new way to start the workload. It creates an identical Pod in the same namespace,
+except the image of the target container. `debug` opens a bash session after the Pod started. 
+The target image is mount to `/image`. Its original parameters are set in the environment variable `IMAGE_ARGS`.
+You can check the original image context or debug the binary in the opened session.
+
+ This command also supports Docker as container runtime. But, it needs a few more steps to install deps.
+See [Install csi-driver-image on Docker](https://github.com/warm-metal/csi-driver-image#docker).
+
+### We are trying to install client-side apps in the cluster.
 
 ## Install
 

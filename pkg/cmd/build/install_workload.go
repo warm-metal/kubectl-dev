@@ -1,15 +1,11 @@
 package build
 
 import (
-	"context"
-	"fmt"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
-	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/kubernetes"
 )
 
 const builderWorkloadName = "buildkitd"
@@ -101,7 +97,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 							Name: "buildkit-root",
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/var/lib/buildkit",
+									Path: o.BuildkitRoot,
 									Type: &dirOrCreate,
 								},
 							},
@@ -126,7 +122,7 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 					Containers: []corev1.Container{
 						{
 							Name:  builderWorkloadName,
-							Image: "warmmetal/buildkit:0.8.1",
+							Image: "docker.io/warmmetal/buildkit:0.8.1-1",
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "service",
@@ -145,9 +141,8 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 									MountPropagation: &bidirectional,
 								},
 								{
-									// FIXME clear /var/lib/buildkit after each reinstalled
 									Name:             "buildkit-root",
-									MountPath:        "/var/lib/buildkit",
+									MountPath:        o.BuildkitRoot,
 									MountPropagation: &bidirectional,
 								},
 								{
@@ -179,56 +174,4 @@ func (o *BuilderInstallOptions) genBuildkitdWorkload() (*corev1.Service, *appsv1
 	}
 
 	return svc, deploy, nil
-}
-
-func fetchBuilderEndpoints(clientset *kubernetes.Clientset) (buildkitAddrs []string, err error) {
-	svc, err := clientset.CoreV1().Services(builderNamespace).
-		Get(context.TODO(), builderWorkloadName, metav1.GetOptions{})
-	if err != nil {
-		return nil, xerrors.Errorf(
-			`can't fetch builder endpoint from Service "%s/%s": %s`, builderNamespace, builderWorkloadName, err)
-	}
-
-	svcPort := int32(0)
-	nodePort := int32(0)
-	for _, port := range svc.Spec.Ports {
-		if port.Name != builderWorkloadName {
-			continue
-		}
-
-		svcPort = port.Port
-		nodePort = port.NodePort
-	}
-
-	if svcPort > 0 {
-		for _, ingress := range svc.Status.LoadBalancer.Ingress {
-			if len(ingress.Hostname) > 0 {
-				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", ingress.Hostname, svcPort))
-			}
-
-			if len(ingress.IP) > 0 {
-				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", ingress.IP, svcPort))
-			}
-		}
-	}
-
-	buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", svc.Spec.ClusterIP, svcPort))
-	if nodePort == 0 {
-		return
-	}
-
-	nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
-	}
-
-	for _, node := range nodes.Items {
-		for _, addr := range node.Status.Addresses {
-			if len(addr.Address) > 0 {
-				buildkitAddrs = append(buildkitAddrs, fmt.Sprintf("tcp://%s:%d", addr.Address, nodePort))
-			}
-		}
-	}
-
-	return
 }

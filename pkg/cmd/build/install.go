@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"path/filepath"
 	"sigs.k8s.io/yaml"
 	"strings"
 )
@@ -55,6 +56,8 @@ type BuilderInstallOptions struct {
 
 	ContainerdRuntimeRoot string
 	containerdRoot        string
+	BuildkitRoot          string
+	SnapshotRoot          string
 
 	Port      int
 	namespace string
@@ -64,14 +67,17 @@ func newBuilderInstallOptions(opts *opts.GlobalOptions, streams genericclioption
 	return &BuilderInstallOptions{
 		GlobalOptions: opts,
 		namespace:     builderNamespace,
+		BuildkitRoot:  "/var/lib/buildkit",
 	}
 }
 
 func (o *BuilderInstallOptions) Complete(cmd *cobra.Command, args []string) error {
 	if o.minikube {
 		o.containerdRoot = "/mnt/vda1/var/lib/containerd"
+		o.BuildkitRoot = "/mnt/vda1/var/lib/buildkit"
 	}
 
+	o.SnapshotRoot = filepath.Join(o.BuildkitRoot, "local-snapshot")
 	return nil
 }
 
@@ -168,7 +174,7 @@ func (o *BuilderInstallOptions) Run() error {
 		return xerrors.Errorf("can't start Deployment buildkitd: %s", err)
 	}
 
-	addrs, err := fetchBuilderEndpoints(clientset)
+	addrs, err := utils.FetchServiceEndpoints(clientset, builderNamespace, builderWorkloadName, builderWorkloadName)
 	if err != nil {
 		return err
 	}
