@@ -62,7 +62,7 @@ func (o *AppOptions) Run() error {
 
 	err = libcli.ExecCliApp(endpoints, app, o.args, o.In, o.Out)
 	if err != nil {
-		return xerrors.Errorf("can't open app shell: %s", err)
+		return xerrors.Errorf("unable to open app shell: %s", err)
 	}
 
 	return nil

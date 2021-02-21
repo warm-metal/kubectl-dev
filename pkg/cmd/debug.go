@@ -170,7 +170,7 @@ func (o *DebugOptions) Run() error {
 
 	err = libcli.ExecCliApp(endpoints, app, []string{string(app.Spec.Shell)}, o.In, o.Out)
 	if err != nil {
-		return xerrors.Errorf("can't open app shell: %s", err)
+		return xerrors.Errorf("unable to open app shell: %s", err)
 	}
 
 	return nil
@@ -201,11 +201,10 @@ kubectl dev debug pod foo --image bar:new-version
 #Debug an image.
 kubectl dev debug --image foo:latest
 
-# Use local network proxies.
+# Pass the local HTTP_PROXY to the debugger Pod.
 kubectl dev debug cronjob foo --use-proxy
 `,
-		SilenceErrors: false,
-		SilenceUsage:  true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err

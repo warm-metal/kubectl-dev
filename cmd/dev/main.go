@@ -33,7 +33,7 @@ func main() {
 	signCh := make(chan os.Signal, 3)
 	defer close(signCh)
 	signal.Ignore(syscall.SIGPIPE)
-	signal.Notify(signCh, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
+	signal.Notify(signCh, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()

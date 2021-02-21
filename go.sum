@@ -1137,6 +1137,8 @@ github.com/warm-metal/cliapp-session-gate v0.0.0-20210218113538-f14236f0cf1e h1:
 github.com/warm-metal/cliapp-session-gate v0.0.0-20210218113538-f14236f0cf1e/go.mod h1:zOJYgap2bPfv56TWyhckL5ltSRoUT4GtKwLwfpUOk1Q=
 github.com/warm-metal/cliapp-session-gate v0.0.0-20210219042618-cb1470173734 h1:4XBMWufajWlsqiAKFzVpDWjZ9qCkEwONmUXclyicBro=
 github.com/warm-metal/cliapp-session-gate v0.0.0-20210219042618-cb1470173734/go.mod h1:W7XBgnapr9JmNuPE4tM7S1Xl2z6p2j+DqvIVciSC3ek=
+github.com/warm-metal/cliapp-session-gate v0.0.0-20210221100020-9bfc85749277 h1:gBfKmksKt4PwHKPpIB9R2H/JoXtboSnobFiLFXSt62s=
+github.com/warm-metal/cliapp-session-gate v0.0.0-20210221100020-9bfc85749277/go.mod h1:W7XBgnapr9JmNuPE4tM7S1Xl2z6p2j+DqvIVciSC3ek=
 github.com/willf/bitset v1.1.11-0.20200630133818-d5bec3311243 h1:R43TdZy32XXSXjJn7M/HhALJ9imq6ztLnChfYJpVDnM=
 github.com/willf/bitset v1.1.11-0.20200630133818-d5bec3311243/go.mod h1:RjeCKbqT1RxIR/KWY6phxZiaY1IyutSBfGjNPySAYV4=
 github.com/xanzy/go-gitlab v0.31.0/go.mod h1:sPLojNBn68fMUWSxIJtdVVIP8uSBYqesTfDUseX11Ug=
