@@ -19,10 +19,11 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 		}
 
 		if !found {
+			fmt.Println(env, "not found")
 			continue
 		}
 
-		if strings.HasPrefix(strings.ToLower(env), "http") {
+		if strings.HasPrefix(env, "http") {
 			proxy, err := url.Parse(v)
 			if err != nil {
 				return nil, xerrors.Errorf(`value of environment variable "%s", %s is not invalid: %s`,
@@ -44,7 +45,7 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 	}
 
 	if len(envs) == 0 {
-		fmt.Fprintln(os.Stderr, "http proxy doesn't set.")
+		fmt.Fprintln(os.Stderr, "http proxy configuration not found.")
 	}
 
 	return
@@ -53,6 +54,10 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 func GetSysProxyEnvs() (envs []string, err error) {
 	vars, err := GetSysProxy()
 	if err != nil {
+		return
+	}
+
+	if len(vars) == 0 {
 		return
 	}
 

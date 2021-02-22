@@ -35,7 +35,7 @@ type appInstallOptions struct {
 	app *appcorev1.CliApp
 }
 
-func (o *appInstallOptions) Complete(cmd *cobra.Command, args []string) error {
+func (o *appInstallOptions) Complete(_ *cobra.Command, args []string) error {
 	if o.Raw().Namespace != nil && len(*o.Raw().Namespace) > 0 {
 		o.namespace = *o.Raw().Namespace
 	}
@@ -127,12 +127,12 @@ func newAppInstallCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStre
 	var cmd = &cobra.Command{
 		Use:   "install [OPTIONS] command",
 		Short: "Install an CliApp.",
-		Long:  `Install an CliApp in the cluster.`,
-		Example: `# Install an App from an image
-kubectl dev app install --name ctr -n default --image docker.io/warmmetal/ctr:v1 --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
+		Long:  `Install an CliApp. You can execute the app in any shell context though it runs in a K8s cluster.`,
+		Example: `# Install ctr via an image to work with node containerd, then, you can run "ctr i ls" to show all images.
+sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --image docker.io/warmmetal/ctr:v1 --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
 
-# Install an App from a Dockerfile
-kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
+# Install ctr via a Dockerfile.
+sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
 `,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -46,6 +46,8 @@ type DebugOptions struct {
 	kindAndName string
 	distro      string
 	shell       string
+
+	app *appcorev1.CliApp
 }
 
 func NewDebugOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *DebugOptions {
@@ -73,6 +75,54 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	o.kindAndName = strings.Join(args, "/")
 	o.instance = fmt.Sprintf("debugger-%s", strings.Replace(o.kindAndName, "/", "-", -1))
+
+	o.app = &appcorev1.CliApp{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      o.instance,
+			Namespace: o.namespace,
+		},
+		Spec: appcorev1.CliAppSpec{
+			TargetPhase:         appcorev1.CliAppPhaseLive,
+			UninstallUnlessLive: true,
+			Distro:              appcorev1.CliAppDistroAlpine,
+			Shell:               appcorev1.CliAppShellBash,
+		},
+	}
+
+	if len(o.kindAndName) > 0 {
+		o.app.Spec.ForkObject = o.kindAndName
+		o.app.Spec.ForkContainer = o.container
+	} else {
+		o.app.Spec.Image = o.image
+	}
+
+	if o.useHTTPProxy {
+		proxies, err := utils.GetSysProxyEnvs()
+		if err != nil {
+			return err
+		}
+
+		o.app.Spec.Env = append(o.app.Spec.Env, proxies...)
+	}
+
+	if len(o.distro) > 0 {
+		distro, err := utils.ValidateDistro(o.distro)
+		if err != nil {
+			return err
+		}
+
+		o.app.Spec.Distro = distro
+	}
+
+	if len(o.shell) > 0 {
+		shell, err := utils.ValidateShell(o.shell)
+		if err != nil {
+			return err
+		}
+
+		o.app.Spec.Shell = shell
+	}
+
 	return nil
 }
 
@@ -84,7 +134,7 @@ func (o *DebugOptions) Validate() error {
 	return nil
 }
 
-func (o *DebugOptions) Run() error {
+func (o *DebugOptions) Run(ctx context.Context) error {
 	conf, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -95,61 +145,20 @@ func (o *DebugOptions) Run() error {
 		return err
 	}
 
-	app, err := appClient.CliappV1().CliApps(o.namespace).Get(context.TODO(), o.instance, metav1.GetOptions{})
+	app, err := appClient.CliappV1().CliApps(o.app.Namespace).Get(ctx, o.app.Name, metav1.GetOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		app = &appcorev1.CliApp{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      o.instance,
-				Namespace: o.namespace,
-			},
-			Spec: appcorev1.CliAppSpec{
-				TargetPhase:         appcorev1.CliAppPhaseLive,
-				UninstallUnlessLive: true,
-				Distro:              appcorev1.CliAppDistroAlpine,
-				Shell:               appcorev1.CliAppShellBash,
-			},
-		}
-
-		if len(o.kindAndName) > 0 {
-			app.Spec.ForkObject = o.kindAndName
-			app.Spec.ForkContainer = o.container
-		} else {
-			app.Spec.Image = o.image
-		}
-
-		if o.useHTTPProxy {
-			proxies, err := utils.GetSysProxyEnvs()
-			if err != nil {
-				return err
-			}
-
-			app.Spec.Env = append(app.Spec.Env, proxies...)
-		}
-
-		if len(o.distro) > 0 {
-			distro, err := utils.ValidateDistro(o.distro)
-			if err != nil {
-				return err
-			}
-
-			app.Spec.Distro = distro
-		}
-
-		if len(o.shell) > 0 {
-			shell, err := utils.ValidateShell(o.shell)
-			if err != nil {
-				return err
-			}
-
-			app.Spec.Shell = shell
-		}
-
-		app, err = appClient.CliappV1().CliApps(app.Namespace).Create(context.TODO(), app, metav1.CreateOptions{})
+		app, err = appClient.CliappV1().CliApps(o.app.Namespace).Create(ctx, o.app, metav1.CreateOptions{})
 		if err != nil && !errors.IsAlreadyExists(err) {
+			return err
+		}
+	} else {
+		app.Spec = o.app.Spec
+		app, err = appClient.CliappV1().CliApps(o.app.Namespace).Update(ctx, app, metav1.UpdateOptions{})
+		if err != nil {
 			return err
 		}
 	}
@@ -159,12 +168,12 @@ func (o *DebugOptions) Run() error {
 		return err
 	}
 
-	endpoints, err := libcli.FetchGateEndpoints(clientset)
+	endpoints, err := libcli.FetchGateEndpoints(ctx, clientset)
 	if err != nil {
 		return err
 	}
 
-	err = libcli.ExecCliApp(endpoints, app, []string{string(app.Spec.Shell)}, o.In, o.Out)
+	err = libcli.ExecCliApp(ctx, endpoints, app, []string{string(app.Spec.Shell)}, o.In, o.Out)
 	if err != nil {
 		return xerrors.Errorf("unable to open app shell: %s", err)
 	}
@@ -208,7 +217,7 @@ kubectl dev debug cronjob foo --use-proxy
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 
