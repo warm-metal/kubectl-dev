@@ -18,7 +18,6 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/app"
-	"github.com/warm-metal/kubectl-dev/pkg/cmd/build"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -50,8 +49,9 @@ kubectl dev build -t foo:tag -f Dockerfile .`,
 	}
 
 	cmd.AddCommand(
+		NewCmdPrepare(o, streams),
 		NewCmdDebug(o, streams),
-		build.NewCmd(o, streams),
+		NewCmd(o, streams),
 		app.NewCmd(o, streams),
 	)
 	cmd.AddCommand(NewVersionCmd())

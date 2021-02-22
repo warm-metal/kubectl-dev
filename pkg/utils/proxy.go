@@ -43,6 +43,10 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 		})
 	}
 
+	if len(envs) == 0 {
+		fmt.Fprintln(os.Stderr, "http proxy doesn't set.")
+	}
+
 	return
 }
 

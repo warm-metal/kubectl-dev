@@ -82,11 +82,6 @@ func (o *appInstallOptions) Complete(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-
-		if len(proxies) == 0 {
-			fmt.Fprintln(o.ErrOut, "http proxy doesn't set.")
-		}
-
 		o.app.Spec.Env = append(o.app.Spec.Env, proxies...)
 	}
 

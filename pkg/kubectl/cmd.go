@@ -1,23 +1,36 @@
 package kubectl
 
 import (
+	"io"
 	"os"
 	"os/exec"
 )
 
-func runWithIO(args ...string) error {
-	cmd := exec.Command("kubectl", args...)
+type RunOptions func(*exec.Cmd)
 
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	return cmd.Run()
+func WithStdin(stdin io.Reader) RunOptions {
+	return func(cmd *exec.Cmd) {
+		cmd.Stdin = stdin
+	}
 }
 
-func run(args ...string) error {
-	// FIXME save all outputs to the popout error
+func AttachIO() RunOptions {
+	return func(cmd *exec.Cmd) {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+}
+
+func runWithIO(args []string) error {
+	return run(args, AttachIO())
+}
+
+func run(args []string, opts ...RunOptions) error {
 	cmd := exec.Command("kubectl", args...)
 	cmd.Env = os.Environ()
+	for _, opt := range opts {
+		opt(cmd)
+	}
 	return cmd.Run()
 }
