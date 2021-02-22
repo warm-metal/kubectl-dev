@@ -23,7 +23,7 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/warm-metal/cliapp v0.0.0-20210219041214-f93de923a220
-	github.com/warm-metal/cliapp-session-gate v0.0.0-20210221100020-9bfc85749277
+	github.com/warm-metal/cliapp-session-gate v0.0.0-20210222170540-ffea51093c70
 	go.opencensus.io v0.22.5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect

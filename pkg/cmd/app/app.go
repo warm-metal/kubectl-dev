@@ -34,7 +34,7 @@ func (o *AppOptions) Validate() error {
 	return nil
 }
 
-func (o *AppOptions) Run() error {
+func (o *AppOptions) Run(ctx context.Context) error {
 	config, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -55,12 +55,12 @@ func (o *AppOptions) Run() error {
 		return err
 	}
 
-	endpoints, err := libcli.FetchGateEndpoints(clientset)
+	endpoints, err := libcli.FetchGateEndpoints(ctx, clientset)
 	if err != nil {
 		return err
 	}
 
-	err = libcli.ExecCliApp(endpoints, app, o.args, o.In, o.Out)
+	err = libcli.ExecCliApp(ctx, endpoints, app, o.args, o.In, o.Out)
 	if err != nil {
 		return xerrors.Errorf("unable to open app shell: %s", err)
 	}
@@ -77,12 +77,14 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 	var cmd = &cobra.Command{
 		Use:   "app [OPTIONS] command",
 		Short: "Run a CliApp.",
-		Long:  `Run a installed CliApp`,
-		Example: `# Run an app
-
+		Long: `CliApp is a sort of command line apps which run in a K8s cluster but can be used as a local command.
+You usually don't this command directly since the "kubectl dev app install" command has installed a shortcut.
+Say cliapp "ctr", type "ctr i ls" in any shell context just like execute a local command.`,
+		Example: `# Run ctr to list all images
+kubectl-dev app -n app --name ctr -- i ls
 `,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		//SilenceUsage:  true,
+		//SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -90,7 +92,7 @@ func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobr
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 
