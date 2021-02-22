@@ -127,10 +127,6 @@ func (o *DebugOptions) Run() error {
 				return err
 			}
 
-			if len(proxies) == 0 {
-				fmt.Fprintln(o.ErrOut, "http proxy doesn't set.")
-			}
-
 			app.Spec.Env = append(app.Spec.Env, proxies...)
 		}
 

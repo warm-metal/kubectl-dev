@@ -58,7 +58,10 @@ func main() {
 				os.Exit(exit.Code)
 			}
 
-			os.Exit(1)
+			if err != nil {
+				os.Exit(1)
+			}
+
 			return
 
 		case <-signCh:

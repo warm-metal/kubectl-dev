@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package build
+package cmd
 
 import (
 	"context"
@@ -65,8 +65,8 @@ func (o *BuildOptions) Complete(_ *cobra.Command, args []string) error {
 	}
 
 	if len(o.buildkitAddrs) == 0 {
-		o.buildkitAddrs, err = utils.FetchServiceEndpoints(clientset, builderNamespace, builderWorkloadName,
-			builderWorkloadName)
+		o.buildkitAddrs, err = utils.FetchServiceEndpoints(clientset,
+			"cliapp-system", "cliapp-buildkitd", "buildkitd")
 		if err != nil {
 			return err
 		}
@@ -104,7 +104,7 @@ func (o *BuildOptions) Complete(_ *cobra.Command, args []string) error {
 		})
 	}
 
-	if _, err := url.Parse(o.dockerfile); err == nil {
+	if u, err := url.Parse(o.dockerfile); err == nil && strings.HasPrefix(u.Scheme, "http") {
 		o.solveOpt.FrontendAttrs["context"] = o.dockerfile
 		return nil
 	}
@@ -200,8 +200,7 @@ kubectl dev build -t foo:latest -f Dockerfile .
 # Build a binary and save to a local directory.
 kubectl dev build -f Dockerfile --local foo/bar/ .
 `,
-		SilenceErrors: false,
-		SilenceUsage:  true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -231,7 +230,5 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 			"automatically fetch them from the cluster")
 
 	o.AddFlags(cmd.Flags())
-
-	cmd.AddCommand(newCmdInstall(opts, streams))
 	return cmd
 }
