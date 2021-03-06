@@ -55,7 +55,7 @@ func (o *appInstallOptions) Complete(_ *cobra.Command, args []string) error {
 			Command:     args,
 			HostPath:    o.hostPaths,
 			Env:         o.envs,
-			TargetPhase: appcorev1.CliAppPhaseRest,
+			TargetPhase: appcorev1.CliAppPhaseLive,
 		},
 	}
 
@@ -103,9 +103,21 @@ func (o *appInstallOptions) Run() error {
 		return err
 	}
 
-	_, err = appClient.CliappV1().CliApps(o.app.Namespace).Create(context.TODO(), o.app, metav1.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return err
+	app, err := appClient.CliappV1().CliApps(o.app.Namespace).Get(context.TODO(), o.app.Name, metav1.GetOptions{})
+	if err == nil {
+		app.Spec = o.app.Spec
+		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Update(context.TODO(), app, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Create(context.TODO(), o.app, metav1.CreateOptions{})
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				return err
+			}
+
+		}
 	}
 
 	if err := o.installShortcut(o.app.Name, o.app.Namespace); err != nil {

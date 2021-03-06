@@ -79,7 +79,7 @@ func (o *PrepareOptions) Run() error {
 	}
 
 	if len(o.envs) > 0 {
-		return updateDeployEnv(o.clientset, "cliapp-buildkitd", "buildkitd", o.envs)
+		return updateDeployEnv(o.clientset, "buildkitd", "buildkitd", o.envs)
 	}
 
 	return nil

@@ -134,14 +134,14 @@ status:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cliapp-csi-image-warm-metal
+  name: cliapp-session-gate
   namespace: cliapp-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cliapp-session-gate
-  namespace: cliapp-system
+  name: csi-image-warm-metal
+  namespace: system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -170,18 +170,6 @@ rules:
   verbs:
   - create
   - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: cliapp-csi-image-warm-metal
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -339,6 +327,18 @@ rules:
   - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: csi-image-warm-metal
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cliapp-leader-election-rolebinding
@@ -350,19 +350,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: cliapp-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: cliapp-csi-image-warm-metal
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cliapp-csi-image-warm-metal
-subjects:
-- kind: ServiceAccount
-  name: cliapp-csi-image-warm-metal
   namespace: cliapp-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -417,37 +404,18 @@ subjects:
   kind: Group
   name: system:serviceaccounts
 ---
-apiVersion: v1
-data:
-  buildkitd.toml: |-
-    debug = true
-    # root is where all buildkit state is stored.
-    root = "/var/lib/buildkit"
-    snapshot-root = "/var/lib/buildkit/local-snapshot"
-    # insecure-entitlements allows insecure entitlements, disabled by default.
-    insecure-entitlements = [ "network.host", "security.insecure" ]
-
-    [grpc]
-      address = [ "unix:///run/buildkit/buildkitd.sock", "tcp://0.0.0.0:2375" ]
-      uid = 0
-      gid = 0
-
-    [worker.oci]
-      enabled = false
-
-    [worker.containerd]
-      address = "/run/containerd/containerd.sock"
-      enabled = true
-      platforms = [ "linux/amd64", "linux/arm64" ]
-      namespace = "k8s.io"
-      gc = true
-      [[worker.containerd.gcpolicy]]
-        keepBytes = 10240000000
-        keepDuration = 3600
-kind: ConfigMap
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  name: cliapp-buildkitd.toml-6t6kb8d247
-  namespace: cliapp-system
+  name: csi-image-warm-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csi-image-warm-metal
+subjects:
+- kind: ServiceAccount
+  name: csi-image-warm-metal
+  namespace: system
 ---
 apiVersion: v1
 data:
@@ -477,20 +445,35 @@ metadata:
   namespace: cliapp-system
 ---
 apiVersion: v1
-kind: Service
+data:
+  buildkitd.toml: |-
+    debug = true
+    # root is where all buildkit state is stored.
+    root = "/var/lib/buildkit"
+    snapshot-root = "/var/lib/buildkit/local-snapshot"
+    # insecure-entitlements allows insecure entitlements, disabled by default.
+    insecure-entitlements = [ "network.host", "security.insecure" ]
+
+    [grpc]
+      address = [ "unix:///run/buildkit/buildkitd.sock", "tcp://0.0.0.0:2375" ]
+      uid = 0
+      gid = 0
+
+    [worker.oci]
+      enabled = false
+
+    [worker.containerd]
+      address = "/run/containerd/containerd.sock"
+      enabled = true
+      platforms = [ "linux/amd64", "linux/arm64" ]
+      namespace = "k8s.io"
+      gc = true
+      [[worker.containerd.gcpolicy]]
+        keepBytes = 10240000000
+        keepDuration = 3600
+kind: ConfigMap
 metadata:
-  name: cliapp-buildkitd
-  namespace: cliapp-system
-spec:
-  ports:
-  - name: buildkitd
-    port: 2375
-    protocol: TCP
-    targetPort: 2375
-  selector:
-    app: builder
-    owner: warm-metal.tech
-  type: LoadBalancer
+  name: buildkitd.toml-6t6kb8d247
 ---
 apiVersion: v1
 kind: Service
@@ -522,14 +505,116 @@ spec:
     app: session-gate
   type: LoadBalancer
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkitd
+  namespace: system
+spec:
+  ports:
+  - name: buildkitd
+    port: 2375
+    protocol: TCP
+    targetPort: 2375
+  selector:
+    app: builder
+    owner: warm-metal.tech
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: cliapp-controller-manager
+  namespace: cliapp-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --logtostderr=true
+        - --v=10
+        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.5.0
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+      - args:
+        - --health-probe-bind-address=:8081
+        - --metrics-bind-address=127.0.0.1:8080
+        - --leader-elect
+        - --builder-svc=tcp://buildkitd:2375
+        command:
+        - /manager
+        image: docker.io/warmmetal/cliapp-controller:v0.2.0
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 100m
+            memory: 30Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+      securityContext:
+        runAsUser: 65532
+      terminationGracePeriodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: session-gate
+  name: cliapp-session-gate
+  namespace: cliapp-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: session-gate
+  template:
+    metadata:
+      labels:
+        app: session-gate
+    spec:
+      containers:
+      - image: docker.io/warmmetal/session-gate:v0.2.0
+        name: session-gate
+        ports:
+        - containerPort: 8001
+      serviceAccountName: cliapp-session-gate
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
     app: builder
     owner: warm-metal.tech
-  name: cliapp-buildkitd
-  namespace: cliapp-system
+  name: buildkitd
+  namespace: system
 spec:
   replicas: 1
   selector:
@@ -545,8 +630,10 @@ spec:
         owner: warm-metal.tech
     spec:
       containers:
-      - image: docker.io/warmmetal/buildkit:0.8.1-1
-        imagePullPolicy: IfNotPresent
+      - env:
+        - name: BUILDKIT_STEP_LOG_MAX_SIZE
+          value: "-1"
+        image: docker.io/warmmetal/buildkit:0.8.1-1
         livenessProbe:
           exec:
             command:
@@ -602,7 +689,7 @@ spec:
           items:
           - key: buildkitd.toml
             path: buildkitd.toml
-          name: cliapp-buildkitd.toml-6t6kb8d247
+          name: buildkitd.toml
         name: buildkitd-conf
       - hostPath:
           path: /run/containerd
@@ -610,96 +697,10 @@ spec:
         name: containerd-runtime
 ---
 apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    control-plane: controller-manager
-  name: cliapp-controller-manager
-  namespace: cliapp-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      control-plane: controller-manager
-  template:
-    metadata:
-      labels:
-        control-plane: controller-manager
-    spec:
-      containers:
-      - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=10
-        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.5.0
-        name: kube-rbac-proxy
-        ports:
-        - containerPort: 8443
-          name: https
-      - args:
-        - --health-probe-bind-address=:8081
-        - --metrics-bind-address=127.0.0.1:8080
-        - --leader-elect
-        - --builder-svc=tcp://cliapp-buildkitd:2375
-        command:
-        - /manager
-        image: docker.io/warmmetal/cliapp-controller:v0.2.0
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        name: manager
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        resources:
-          limits:
-            cpu: 100m
-            memory: 30Mi
-          requests:
-            cpu: 100m
-            memory: 20Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-      securityContext:
-        runAsUser: 65532
-      terminationGracePeriodSeconds: 10
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: session-gate
-  name: cliapp-session-gate
-  namespace: cliapp-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: session-gate
-  template:
-    metadata:
-      labels:
-        app: session-gate
-    spec:
-      containers:
-      - image: docker.io/warmmetal/session-gate:v0.2.0
-        name: session-gate
-        ports:
-        - containerPort: 8001
-      serviceAccountName: cliapp-session-gate
----
-apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: cliapp-csi-image-warm-metal
-  namespace: cliapp-system
+  name: csi-image-warm-metal
+  namespace: system
 spec:
   selector:
     matchLabels:
@@ -764,7 +765,7 @@ spec:
         - mountPath: /registration
           name: registration-dir
       hostNetwork: true
-      serviceAccountName: cliapp-csi-image-warm-metal
+      serviceAccountName: csi-image-warm-metal
       volumes:
       - hostPath:
           path: /var/lib/containerd
@@ -790,8 +791,7 @@ spec:
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
-  name: cliapp-csi-image.warm-metal.tech
-  namespace: cliapp-system
+  name: csi-image.warm-metal.tech
 spec:
   attachRequired: false
   podInfoOnMount: true
@@ -930,13 +930,13 @@ status:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cliapp-csi-image-warm-metal
+  name: cliapp-session-gate
   namespace: cliapp-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: cliapp-session-gate
+  name: csi-image-warm-metal
   namespace: cliapp-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -966,18 +966,6 @@ rules:
   verbs:
   - create
   - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: cliapp-csi-image-warm-metal
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -1135,6 +1123,18 @@ rules:
   - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: csi-image-warm-metal
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cliapp-leader-election-rolebinding
@@ -1146,19 +1146,6 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: default
-  namespace: cliapp-system
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: cliapp-csi-image-warm-metal
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cliapp-csi-image-warm-metal
-subjects:
-- kind: ServiceAccount
-  name: cliapp-csi-image-warm-metal
   namespace: cliapp-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -1213,6 +1200,19 @@ subjects:
   kind: Group
   name: system:serviceaccounts
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: csi-image-warm-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csi-image-warm-metal
+subjects:
+- kind: ServiceAccount
+  name: csi-image-warm-metal
+  namespace: cliapp-system
+---
 apiVersion: v1
 data:
   buildkitd.toml: |-
@@ -1242,7 +1242,7 @@ data:
         keepDuration = 3600
 kind: ConfigMap
 metadata:
-  name: cliapp-buildkitd.toml-6t6kb8d247
+  name: buildkitd.toml-6t6kb8d247
   namespace: cliapp-system
 ---
 apiVersion: v1
@@ -1275,7 +1275,7 @@ metadata:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cliapp-buildkitd
+  name: buildkitd
   namespace: cliapp-system
 spec:
   ports:
@@ -1324,7 +1324,7 @@ metadata:
   labels:
     app: builder
     owner: warm-metal.tech
-  name: cliapp-buildkitd
+  name: buildkitd
   namespace: cliapp-system
 spec:
   replicas: 1
@@ -1341,8 +1341,10 @@ spec:
         owner: warm-metal.tech
     spec:
       containers:
-      - image: docker.io/warmmetal/buildkit:0.8.1-1
-        imagePullPolicy: IfNotPresent
+      - env:
+        - name: BUILDKIT_STEP_LOG_MAX_SIZE
+          value: "-1"
+        image: docker.io/warmmetal/buildkit:0.8.1-1
         livenessProbe:
           exec:
             command:
@@ -1398,7 +1400,7 @@ spec:
           items:
           - key: buildkitd.toml
             path: buildkitd.toml
-          name: cliapp-buildkitd.toml-6t6kb8d247
+          name: buildkitd.toml-6t6kb8d247
         name: buildkitd-conf
       - hostPath:
           path: /run/containerd
@@ -1437,7 +1439,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=127.0.0.1:8080
         - --leader-elect
-        - --builder-svc=tcp://cliapp-buildkitd:2375
+        - --builder-svc=tcp://buildkitd:2375
         command:
         - /manager
         image: docker.io/warmmetal/cliapp-controller:v0.2.0
@@ -1494,7 +1496,7 @@ spec:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: cliapp-csi-image-warm-metal
+  name: csi-image-warm-metal
   namespace: cliapp-system
 spec:
   selector:
@@ -1560,7 +1562,7 @@ spec:
         - mountPath: /registration
           name: registration-dir
       hostNetwork: true
-      serviceAccountName: cliapp-csi-image-warm-metal
+      serviceAccountName: csi-image-warm-metal
       volumes:
       - hostPath:
           path: /mnt/vda1/var/lib/containerd
@@ -1586,7 +1588,7 @@ spec:
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
-  name: cliapp-csi-image.warm-metal.tech
+  name: csi-image.warm-metal.tech
   namespace: cliapp-system
 spec:
   attachRequired: false

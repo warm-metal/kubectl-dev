@@ -66,7 +66,7 @@ func (o *BuildOptions) Complete(_ *cobra.Command, args []string) error {
 
 	if len(o.buildkitAddrs) == 0 {
 		o.buildkitAddrs, err = utils.FetchServiceEndpoints(clientset,
-			"cliapp-system", "cliapp-buildkitd", "buildkitd")
+			"cliapp-system", "buildkitd", "buildkitd")
 		if err != nil {
 			return err
 		}
