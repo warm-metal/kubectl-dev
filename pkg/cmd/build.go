@@ -58,14 +58,14 @@ func newBuilderOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStr
 	}
 }
 
-func (o *BuildOptions) Complete(_ *cobra.Command, args []string) error {
+func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 	clientset, err := o.ClientSet()
 	if err != nil {
 		return err
 	}
 
 	if len(o.buildkitAddrs) == 0 {
-		o.buildkitAddrs, err = utils.FetchServiceEndpoints(clientset,
+		o.buildkitAddrs, err = utils.FetchServiceEndpoints(cmd.Context(), clientset,
 			"cliapp-system", "buildkitd", "buildkitd")
 		if err != nil {
 			return err
@@ -143,12 +143,12 @@ func (o *BuildOptions) Validate() error {
 	return nil
 }
 
-func (o *BuildOptions) Run() (err error) {
+func (o *BuildOptions) Run(ctx context.Context) (err error) {
 	var client *buildkit.Client
 	for i, addr := range o.buildkitAddrs {
-		client, err = buildkit.New(context.TODO(), addr, buildkit.WithFailFast())
+		client, err = buildkit.New(ctx, addr, buildkit.WithFailFast())
 		if err == nil {
-			timed, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+			timed, cancel := context.WithTimeout(ctx, 3*time.Second)
 			_, err = client.ListWorkers(timed)
 			cancel()
 		}
@@ -170,12 +170,12 @@ func (o *BuildOptions) Run() (err error) {
 
 	defer client.Close()
 
-	pw, err := progresswriter.NewPrinter(context.TODO(), os.Stderr, "")
+	pw, err := progresswriter.NewPrinter(ctx, os.Stderr, "")
 	if err != nil {
 		return xerrors.Errorf("can't initialize progress writer: %s", err)
 	}
 
-	if _, err = client.Solve(context.TODO(), nil, o.solveOpt, pw.Status()); err != nil {
+	if _, err = client.Solve(ctx, nil, o.solveOpt, pw.Status()); err != nil {
 		<-pw.Done()
 		return xerrors.Errorf("%s", err)
 	}
@@ -208,7 +208,7 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 

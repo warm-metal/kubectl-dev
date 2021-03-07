@@ -45,7 +45,7 @@ func (o *AppOptions) Run(ctx context.Context) error {
 		return err
 	}
 
-	app, err := appClient.CliappV1().CliApps(o.namespace).Get(context.TODO(), o.name, metav1.GetOptions{})
+	app, err := appClient.CliappV1().CliApps(o.namespace).Get(ctx, o.name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

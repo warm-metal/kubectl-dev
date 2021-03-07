@@ -8,9 +8,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func FetchServiceEndpoints(clientset *kubernetes.Clientset, namespace, service, port string) (addrs []string, err error) {
-	svc, err := clientset.CoreV1().Services(namespace).
-		Get(context.TODO(), service, metav1.GetOptions{})
+func FetchServiceEndpoints(ctx context.Context, clientset *kubernetes.Clientset, namespace, service, port string) (addrs []string, err error) {
+	svc, err := clientset.CoreV1().Services(namespace).Get(ctx, service, metav1.GetOptions{})
 	if err != nil {
 		return nil, xerrors.Errorf(
 			`can't fetch endpoint from Service "%s/%s": %s`, namespace, service, err)
@@ -41,7 +40,7 @@ func FetchServiceEndpoints(clientset *kubernetes.Clientset, namespace, service, 
 	}
 
 	if nodePort > 0 {
-		nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+		nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
 		}

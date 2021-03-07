@@ -25,8 +25,7 @@ import (
 
 func NewCmdDev(streams genericclioptions.IOStreams) *cobra.Command {
 	o := &opts.GlobalOptions{
-		DevNamespace: "dev",
-		ConfigFlags:  kubectl.NewConfigFlags(),
+		ConfigFlags: kubectl.NewConfigFlags(),
 	}
 
 	var cmd = &cobra.Command{
@@ -56,8 +55,6 @@ kubectl dev build -t foo:tag -f Dockerfile .`,
 	)
 	cmd.AddCommand(NewVersionCmd())
 
-	cmd.PersistentFlags().StringVar(&o.DevNamespace, "dev-namespace", "dev",
-		"Namespace in which kubectl-dev coordinators installed")
 	o.AddFlags(cmd.Flags())
 	return cmd
 }
