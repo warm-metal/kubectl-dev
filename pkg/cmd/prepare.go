@@ -2,17 +2,28 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"golang.org/x/xerrors"
 	"io"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/watch"
 	"k8s.io/client-go/util/retry"
 	"strings"
+	"sync"
+
+	appsv1 "k8s.io/api/apps/v1"
+	watchAPI "k8s.io/apimachinery/pkg/watch"
 )
 
 type PrepareOptions struct {
@@ -79,15 +90,39 @@ func (o *PrepareOptions) Run() error {
 	}
 
 	if len(o.envs) > 0 {
-		return updateDeployEnv(o.clientset, "buildkitd", "buildkitd", o.envs)
+		if err := updateDeployEnv(o.clientset, "buildkitd", "buildkitd", o.envs); err != nil {
+			return err
+		}
 	}
 
+	workloads := map[string]runtime.Object{
+		"csi-image-warm-metal":      &appsv1.DaemonSet{},
+		"buildkitd":                 &appsv1.Deployment{},
+		"cliapp-controller-manager": &appsv1.Deployment{},
+		"cliapp-session-gate":       &appsv1.Deployment{},
+	}
+
+	fmt.Println("Waiting for workloads...")
+	wg := sync.WaitGroup{}
+	for name, kind := range workloads {
+		wg.Add(1)
+		go func(name string, objType runtime.Object) {
+			defer wg.Done()
+			if err := waitForWorkloadToBeReady(context.TODO(), o.clientset, objType, name); err != nil {
+				fmt.Fprintf(o.ErrOut, "unable to watch workload %s/%s: %s\n", objType, name, err)
+			}
+		}(name, kind)
+	}
+
+	wg.Wait()
 	return nil
 }
 
+const appNamespace = "cliapp-system"
+
 func updateDeployEnv(clientset *kubernetes.Clientset, name, container string, envs []corev1.EnvVar) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		client := clientset.AppsV1().Deployments("cliapp-system")
+		client := clientset.AppsV1().Deployments(appNamespace)
 		deploy, err := client.Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -105,6 +140,55 @@ func updateDeployEnv(clientset *kubernetes.Clientset, name, container string, en
 		_, err = client.Update(context.TODO(), deploy, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func waitForWorkloadToBeReady(ctx context.Context, clientset *kubernetes.Clientset, objType runtime.Object, name string) error {
+	gvks, _, err := scheme.Scheme.ObjectKinds(objType)
+	if err != nil {
+		return err
+	}
+
+	if len(gvks) == 0 {
+		panic(objType)
+	}
+
+	listWatcher := cache.NewListWatchFromClient(
+		clientset.AppsV1().RESTClient(), strings.ToLower(gvks[0].Kind)+"s",
+		appNamespace, fields.OneTermEqualSelector("metadata.name", name),
+	)
+	_, err = watch.UntilWithSync(ctx, listWatcher, objType, nil, func(event watchAPI.Event) (done bool, err error) {
+		switch event.Type {
+		case watchAPI.Error:
+			st, ok := event.Object.(*metav1.Status)
+			if ok {
+				err = xerrors.Errorf("failed %s", st.Message)
+			} else {
+				err = xerrors.Errorf("unknown error:%#v", event.Object)
+			}
+
+			return
+		case watchAPI.Deleted:
+			return
+		default:
+			switch obj := event.Object.(type) {
+			case *appsv1.Deployment:
+				if obj.Status.ReadyReplicas == *obj.Spec.Replicas {
+					fmt.Println(gvks[0].Kind, name, "is ready")
+					done = true
+				}
+			case *appsv1.DaemonSet:
+				if obj.Status.NumberReady == obj.Status.DesiredNumberScheduled {
+					fmt.Println(gvks[0].Kind, name, "is ready")
+					done = true
+				}
+			default:
+				panic(event.Object.GetObjectKind())
+			}
+			return
+		}
+	})
+
+	return err
 }
 
 func NewCmdPrepare(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
