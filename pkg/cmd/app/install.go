@@ -92,7 +92,7 @@ func (o *appInstallOptions) Validate() error {
 	return nil
 }
 
-func (o *appInstallOptions) Run() error {
+func (o *appInstallOptions) Run(ctx context.Context) error {
 	conf, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -103,15 +103,15 @@ func (o *appInstallOptions) Run() error {
 		return err
 	}
 
-	app, err := appClient.CliappV1().CliApps(o.app.Namespace).Get(context.TODO(), o.app.Name, metav1.GetOptions{})
+	app, err := appClient.CliappV1().CliApps(o.app.Namespace).Get(ctx, o.app.Name, metav1.GetOptions{})
 	if err == nil {
 		app.Spec = o.app.Spec
-		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Update(context.TODO(), app, metav1.UpdateOptions{})
+		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Update(ctx, app, metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}
 	} else {
-		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Create(context.TODO(), o.app, metav1.CreateOptions{})
+		_, err = appClient.CliappV1().CliApps(o.app.Namespace).Create(ctx, o.app, metav1.CreateOptions{})
 		if err != nil {
 			if !errors.IsAlreadyExists(err) {
 				return err
@@ -154,7 +154,7 @@ sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 

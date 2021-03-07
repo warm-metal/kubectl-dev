@@ -78,7 +78,7 @@ func (o *PrepareOptions) Validate() error {
 	return nil
 }
 
-func (o *PrepareOptions) Run() error {
+func (o *PrepareOptions) Run(ctx context.Context) error {
 	if len(o.manifestURL) > 0 {
 		if err := kubectl.ApplyManifests(o.manifestURL); err != nil {
 			return err
@@ -90,7 +90,7 @@ func (o *PrepareOptions) Run() error {
 	}
 
 	if len(o.envs) > 0 {
-		if err := updateDeployEnv(o.clientset, "buildkitd", "buildkitd", o.envs); err != nil {
+		if err := updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs); err != nil {
 			return err
 		}
 	}
@@ -108,7 +108,7 @@ func (o *PrepareOptions) Run() error {
 		wg.Add(1)
 		go func(name string, objType runtime.Object) {
 			defer wg.Done()
-			if err := waitForWorkloadToBeReady(context.TODO(), o.clientset, objType, name); err != nil {
+			if err := waitForWorkloadToBeReady(ctx, o.clientset, objType, name); err != nil {
 				fmt.Fprintf(o.ErrOut, "unable to watch workload %s/%s: %s\n", objType, name, err)
 			}
 		}(name, kind)
@@ -120,10 +120,10 @@ func (o *PrepareOptions) Run() error {
 
 const appNamespace = "cliapp-system"
 
-func updateDeployEnv(clientset *kubernetes.Clientset, name, container string, envs []corev1.EnvVar) error {
+func updateDeployEnv(ctx context.Context, clientset *kubernetes.Clientset, name, container string, envs []corev1.EnvVar) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		client := clientset.AppsV1().Deployments(appNamespace)
-		deploy, err := client.Get(context.TODO(), name, metav1.GetOptions{})
+		deploy, err := client.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ func updateDeployEnv(clientset *kubernetes.Clientset, name, container string, en
 			c.Env = append(c.Env, envs...)
 		}
 
-		_, err = client.Update(context.TODO(), deploy, metav1.UpdateOptions{})
+		_, err = client.Update(ctx, deploy, metav1.UpdateOptions{})
 		return err
 	})
 }
@@ -220,7 +220,7 @@ kubectl dev prepare -u
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 

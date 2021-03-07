@@ -33,7 +33,7 @@ func (o *appListOptions) Validate() error {
 	return nil
 }
 
-func (o *appListOptions) Run() error {
+func (o *appListOptions) Run(ctx context.Context) error {
 	conf, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (o *appListOptions) Run() error {
 		filter.FieldSelector = fields.Set{"metadata.name": o.name}.AsSelector().String()
 	}
 
-	apps, err := appClient.CliappV1().CliApps(o.namespace).List(context.TODO(), filter)
+	apps, err := appClient.CliappV1().CliApps(o.namespace).List(ctx, filter)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ kubectl dev app list -n app
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 

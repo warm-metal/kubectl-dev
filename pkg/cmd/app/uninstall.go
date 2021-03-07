@@ -44,7 +44,7 @@ func (o *appUninstallOptions) Validate() error {
 	return nil
 }
 
-func (o *appUninstallOptions) Run() error {
+func (o *appUninstallOptions) Run(ctx context.Context) error {
 	conf, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -55,7 +55,7 @@ func (o *appUninstallOptions) Run() error {
 		return err
 	}
 
-	err = appClient.CliappV1().CliApps(o.namespace).Delete(context.TODO(), o.name, metav1.DeleteOptions{})
+	err = appClient.CliappV1().CliApps(o.namespace).Delete(ctx, o.name, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -91,7 +91,7 @@ kubectl dev app uninstall -n app ctr
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(); err != nil {
+			if err := o.Run(cmd.Context()); err != nil {
 				return err
 			}
 
