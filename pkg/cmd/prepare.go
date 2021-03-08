@@ -134,7 +134,24 @@ func updateDeployEnv(ctx context.Context, clientset *kubernetes.Clientset, name,
 				continue
 			}
 
-			c.Env = append(c.Env, envs...)
+			for i := range envs {
+				env := &envs[i]
+				found := false
+				for j := range c.Env {
+					if c.Env[j].Name == env.Name {
+						c.Env[j].Value = env.Value
+						c.Env[j].ValueFrom = env.ValueFrom
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					c.Env = append(c.Env, envs[i])
+				}
+			}
+
+			break
 		}
 
 		_, err = client.Update(ctx, deploy, metav1.UpdateOptions{})
