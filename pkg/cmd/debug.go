@@ -38,6 +38,7 @@ type DebugOptions struct {
 
 	container    string
 	useHTTPProxy bool
+	alsoForkEnvs bool
 
 	instance  string
 	image     string
@@ -90,8 +91,11 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(o.kindAndName) > 0 {
-		o.app.Spec.ForkObject = o.kindAndName
-		o.app.Spec.ForkContainer = o.container
+		o.app.Spec.Fork = &appcorev1.ForkObject{
+			Object:    o.kindAndName,
+			Container: o.container,
+			WithEnvs:  o.alsoForkEnvs,
+		}
 	} else {
 		o.app.Spec.Image = o.image
 	}
@@ -194,8 +198,11 @@ ReplicaSet, Job, CronJob, and Pod.
 The command requires the CSI driver https://github.com/warm-metal/csi-driver-image. All the install manifests are in its
 "install" folder. If they aren't exactly match your cluster, you can install it manually. 
 `,
-		Example: `# # Debug a running or failed workload. Run the same command again could open a new session to the same debugger.
+		Example: `# Debug a running or failed workload. Run the same command again could open a new session to the same debugger.
 kubectl dev debug deploy foo
+
+# The debugger Pod would not fork environment variables from the original workload.
+kubectl dev debug deploy foo --with-original-envs
 
 # Specify container name if more than one containers in the Pod.
 kubectl dev debug ds foo -c bar
@@ -236,6 +243,8 @@ kubectl dev debug cronjob foo --use-proxy
 		"Linux distro that the app prefer. The default value is alpine.")
 	cmd.Flags().StringVar(&o.shell, "shell", "",
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
+	cmd.Flags().BoolVar(&o.alsoForkEnvs, "with-original-envs", true,
+		"Copy original labels if enabled. Such that network traffic could also gets into the debug Pod.")
 	o.AddFlags(cmd.Flags())
 
 	return cmd
