@@ -33,6 +33,7 @@ type PrepareOptions struct {
 	minikube        bool
 	useHTTPProxy    bool
 	updateManifests bool
+	builderEnvs     []string
 
 	manifestReader io.Reader
 	manifestURL    string
@@ -41,7 +42,7 @@ type PrepareOptions struct {
 	clientset *kubernetes.Clientset
 }
 
-func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) error {
+func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error) {
 	if o.updateManifests {
 		if o.minikube {
 			o.manifestURL = latestMinikubeManifests
@@ -58,6 +59,11 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.manifestReader = strings.NewReader(containerdManifests)
 	}
 
+	o.clientset, err = o.ClientSet()
+	if err != nil {
+		return err
+	}
+
 	if o.useHTTPProxy {
 		proxies, err := utils.GetSysProxy()
 		if err != nil {
@@ -65,10 +71,18 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) error {
 		}
 
 		o.envs = proxies
-		o.clientset, err = o.ClientSet()
-		if err != nil {
-			return err
+	}
+
+	for _, envs := range o.builderEnvs {
+		if len(envs) == 0 {
+			continue
 		}
+
+		kv := strings.Split(envs, "=")
+		o.envs = append(o.envs, corev1.EnvVar{
+			Name:  kv[0],
+			Value: strings.Join(kv[1:], "="),
+		})
 	}
 
 	return nil
@@ -90,7 +104,8 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 	}
 
 	if len(o.envs) > 0 {
-		if err := updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs); err != nil {
+		err := updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs, !o.useHTTPProxy)
+		if err != nil {
 			return err
 		}
 	}
@@ -120,12 +135,31 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 
 const appNamespace = "cliapp-system"
 
-func updateDeployEnv(ctx context.Context, clientset *kubernetes.Clientset, name, container string, envs []corev1.EnvVar) error {
+func updateDeployEnv(
+	ctx context.Context, clientset *kubernetes.Clientset, name, container string, newEnvs []corev1.EnvVar, cleanProxy bool,
+) error {
+	cleanEnvMap := map[string]bool{}
+	if cleanProxy {
+		cleanEnvMap = map[string]bool{
+			"http_proxy":  true,
+			"HTTP_PROXY":  true,
+			"https_proxy": true,
+			"HTTPS_PROXY": true,
+			"no_proxy":    true,
+			"NO_PROXY":    true,
+		}
+	}
+
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		client := clientset.AppsV1().Deployments(appNamespace)
 		deploy, err := client.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
+		}
+
+		newEvnMap := make(map[string]int, len(newEnvs))
+		for i := range newEnvs {
+			newEvnMap[newEnvs[i].Name] = i
 		}
 
 		for i := range deploy.Spec.Template.Spec.Containers {
@@ -134,23 +168,28 @@ func updateDeployEnv(ctx context.Context, clientset *kubernetes.Clientset, name,
 				continue
 			}
 
-			for i := range envs {
-				env := &envs[i]
-				found := false
-				for j := range c.Env {
-					if c.Env[j].Name == env.Name {
-						c.Env[j].Value = env.Value
-						c.Env[j].ValueFrom = env.ValueFrom
-						found = true
-						break
-					}
+			envs := make([]corev1.EnvVar, 0, len(c.Env)+len(newEnvs))
+
+			for i := range c.Env {
+				env := &c.Env[i]
+				if cleanEnvMap[env.Name] {
+					continue
 				}
 
-				if !found {
-					c.Env = append(c.Env, envs[i])
+				if updated, found := newEvnMap[env.Name]; found {
+					delete(newEvnMap, env.Name)
+					envs = append(envs, newEnvs[updated])
+					continue
 				}
+
+				envs = append(envs, *env)
 			}
 
+			for _, i := range newEvnMap {
+				envs = append(envs, newEnvs[i])
+			}
+
+			c.Env = envs
 			break
 		}
 
@@ -223,8 +262,11 @@ kubectl dev prepare
 # Install cliapp into a minikube cluster.
 kubectl dev prepare --minikube
 
-# Install cliapp along with HTTP_PROXY configurations.
+# Install cliapp and set local HTTP_PROXY settings to buildkit.
 kubectl dev prepare --use-proxy
+
+# Install cliapp and set the environment variable to buildkit.
+kubectl dev prepare --builder-env GOPROXY='https://goproxy.cn|https://goproxy.io|direct'
 
 # Install cliapp via the latest remote manifests.
 kubectl dev prepare -u
@@ -251,6 +293,8 @@ kubectl dev prepare -u
 		"If set, use current HTTP proxy settings.")
 	cmd.Flags().BoolVarP(&o.updateManifests, "update", "u", o.updateManifests,
 		"If true, the latest online manifest will be downloaded.")
+	cmd.Flags().StringSliceVar(&o.builderEnvs, "builder-env", nil,
+		"Set environment variables for buildkit. Such as setting GOPROXY=goproxy.cn for go module.")
 	o.AddFlags(cmd.Flags())
 	return cmd
 }
