@@ -83,8 +83,8 @@ Say cliapp "ctr", type "ctr i ls" in any shell context just like execute a local
 		Example: `# Run ctr to list all images
 kubectl-dev app -n app --name ctr -- i ls
 `,
-		//SilenceUsage:  true,
-		//SilenceErrors: true,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
