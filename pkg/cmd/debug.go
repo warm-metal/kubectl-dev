@@ -240,7 +240,7 @@ kubectl dev debug cronjob foo --use-proxy
 	cmd.Flags().BoolVar(&o.useHTTPProxy, "use-proxy", false,
 		"If set, use current HTTP proxy settings.")
 	cmd.Flags().StringVar(&o.distro, "distro", "",
-		"Linux distro that the app prefer. The default value is alpine.")
+		"Linux distro that the app prefer. The default value is alpine. ubuntu is also supported.")
 	cmd.Flags().StringVar(&o.shell, "shell", "",
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
 	cmd.Flags().BoolVar(&o.alsoForkEnvs, "with-original-envs", true,

@@ -59,6 +59,10 @@ func (o *appInstallOptions) Complete(_ *cobra.Command, args []string) error {
 		},
 	}
 
+	if len(args) == 0 {
+		o.app.Spec.Command = []string{o.name}
+	}
+
 	if len(o.distro) > 0 {
 		distro, err := utils.ValidateDistro(o.distro)
 		if err != nil {
@@ -137,14 +141,23 @@ func newAppInstallCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStre
 	}
 
 	var cmd = &cobra.Command{
-		Use:   "install [OPTIONS] command",
+		Use:   "install [OPTIONS] [command]",
 		Short: "Install an CliApp.",
-		Long:  `Install an CliApp. You can execute the app in any shell context though it runs in a K8s cluster.`,
+		Long:  `A CliApp is executed in any local terminal then runs in a K8s cluster.`,
 		Example: `# Install ctr via an image to work with node containerd, then, you can run "ctr i ls" to show all images.
-sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --image docker.io/warmmetal/ctr:v1 --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
+# The last argument "crictl" shows that command crictl will be executed in the Pod once the app is executed.
+# If omitted, the command same with the app name is started instead.
+sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io \
+	--hostpath /var/run/containerd/containerd.sock \
+	--image docker.io/warmmetal/ctr:v1 \
+	--use-proxy \
+	ctr
 
 # Install ctr via a Dockerfile.
-sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io --dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile --hostpath /var/run/containerd/containerd.sock --use-proxy ctr
+sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE=k8s.io \
+	--hostpath /var/run/containerd/containerd.sock \
+	--dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile \
+	--use-proxy
 `,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
