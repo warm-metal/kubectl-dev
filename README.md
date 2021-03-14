@@ -175,7 +175,7 @@ mini_create() {
 }
 ```
 
-### Start an exited cluster
+### Start an existed cluster
 
 After the cluster created, we must disable both `--preload` and `--cache-images`. Or,  
 with --preload enabled, the containerd content store will be override by a pre-downloaded tarball.
