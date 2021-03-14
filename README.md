@@ -10,7 +10,7 @@ Currently, the plugin can only work on **containerd**.
 * Image Builder for containerd, w/ host HTTP_PROXY settings,
 * [CliApp](https://github.com/warm-metal/cliapp#cliapp).
 
-## Install
+## Installation
 
 ### From Homebrew
 The Homebrew formulae is available for MacOS.
@@ -137,7 +137,7 @@ sudo -E kubectl dev app install --name ctr \
 	--hostpath /var/run/containerd/containerd.sock --use-proxy
 ```
 
-## Build
+## Build from Source
 
 ```shell script
 # For MacOS, run
