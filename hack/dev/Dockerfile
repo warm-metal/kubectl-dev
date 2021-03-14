@@ -1,4 +1,4 @@
-FROM golang:1-buster as builder
+FROM golang:1.15 as builder
 
 WORKDIR /go/src/kubectl-dev
 COPY go.mod go.sum ./
