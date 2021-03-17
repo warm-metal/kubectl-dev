@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5
-	github.com/warm-metal/cliapp v0.0.0-20210312163814-5f0ff75d3678
+	github.com/warm-metal/cliapp v0.0.0-20210316130830-9bce66216aae
 	github.com/warm-metal/cliapp-session-gate v0.0.0-20210314100207-b25e2fc5d6aa
 	go.opencensus.io v0.22.5 // indirect
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad // indirect
@@ -36,6 +36,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20210211043216-66d8d84e87dd // indirect
 	sigs.k8s.io/controller-runtime v0.8.2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.3 // indirect
+	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
 replace github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305

@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
+	appcorev1 "github.com/warm-metal/cliapp/pkg/apis/cliapp/v1"
+	configv1 "github.com/warm-metal/cliapp/pkg/apis/config/v1"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	"io"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -19,8 +23,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/watch"
 	"k8s.io/client-go/util/retry"
+	"sigs.k8s.io/yaml"
 	"strings"
 	"sync"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	watchAPI "k8s.io/apimachinery/pkg/watch"
@@ -29,6 +35,10 @@ import (
 type PrepareOptions struct {
 	*opts.GlobalOptions
 	genericclioptions.IOStreams
+
+	defaultShell  string
+	defaultDistro string
+	idleLivesLast time.Duration
 
 	minikube        bool
 	useHTTPProxy    bool
@@ -103,6 +113,18 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		}
 	}
 
+	workloads := map[string]runtime.Object{
+		"csi-image-warm-metal":      &appsv1.DaemonSet{},
+		"buildkitd":                 &appsv1.Deployment{},
+		"cliapp-controller-manager": &appsv1.Deployment{},
+		"cliapp-session-gate":       &appsv1.Deployment{},
+	}
+
+	err := fetchObject(ctx, o.clientset, workloads["cliapp-controller-manager"], "cliapp-controller-manager")
+	if err != nil {
+		return err
+	}
+
 	if len(o.envs) > 0 {
 		err := updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs, !o.useHTTPProxy)
 		if err != nil {
@@ -110,11 +132,9 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		}
 	}
 
-	workloads := map[string]runtime.Object{
-		"csi-image-warm-metal":      &appsv1.DaemonSet{},
-		"buildkitd":                 &appsv1.Deployment{},
-		"cliapp-controller-manager": &appsv1.Deployment{},
-		"cliapp-session-gate":       &appsv1.Deployment{},
+	err = updateDefaultConfiguration(ctx, o.clientset, o.defaultShell, o.defaultDistro, o.idleLivesLast)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("Waiting for workloads...")
@@ -123,8 +143,8 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func(name string, objType runtime.Object) {
 			defer wg.Done()
-			if err := waitForWorkloadToBeReady(ctx, o.clientset, objType, name); err != nil {
-				fmt.Fprintf(o.ErrOut, "unable to watch workload %s/%s: %s\n", objType, name, err)
+			if err := waitForWorkloadsToBeReady(ctx, o.clientset, objType, name); err != nil {
+				fmt.Fprintf(o.ErrOut, "unable to watch workload %s: %s\n", name, err)
 			}
 		}(name, kind)
 	}
@@ -198,7 +218,54 @@ func updateDeployEnv(
 	})
 }
 
-func waitForWorkloadToBeReady(ctx context.Context, clientset *kubernetes.Clientset, objType runtime.Object, name string) error {
+func updateDefaultConfiguration(
+	ctx context.Context, clientset *kubernetes.Clientset, defaultShell, defaultDistro string, idleLivesLast time.Duration,
+) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "cliapp-manager-config", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		content := cm.Data["controller_manager_config.yaml"]
+		y, err := yaml.YAMLToJSON([]byte(content))
+		if err != nil {
+			return err
+		}
+
+		conf := configv1.CliAppDefault{}
+		if err = yaml.Unmarshal(y, &conf); err != nil {
+			return err
+		}
+
+		conf.DefaultShell = defaultShell
+		conf.DefaultDistro = defaultDistro
+		conf.DurationIdleLivesLast = metav1.Duration{idleLivesLast}
+		y, err = yaml.Marshal(&conf)
+		if err != nil {
+			return err
+		}
+
+		cm.Data["controller_manager_config.yaml"] = string(y)
+		_, err = clientset.CoreV1().ConfigMaps(appNamespace).Update(ctx, cm, metav1.UpdateOptions{})
+		return err
+	})
+
+	if err != nil {
+		return err
+	}
+
+	deploy, err := clientset.AppsV1().Deployments(appNamespace).Get(ctx, "cliapp-controller-manager", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	return clientset.CoreV1().Pods(appNamespace).DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(deploy.Spec.Selector.MatchLabels).String(),
+	})
+}
+
+func waitForWorkloadsToBeReady(ctx context.Context, clientset *kubernetes.Clientset, objType runtime.Object, name string) error {
 	gvks, _, err := scheme.Scheme.ObjectKinds(objType)
 	if err != nil {
 		return err
@@ -212,6 +279,12 @@ func waitForWorkloadToBeReady(ctx context.Context, clientset *kubernetes.Clients
 		clientset.AppsV1().RESTClient(), strings.ToLower(gvks[0].Kind)+"s",
 		appNamespace, fields.OneTermEqualSelector("metadata.name", name),
 	)
+
+	accessor, err := meta.CommonAccessor(objType)
+	if err != nil {
+		panic(err)
+	}
+
 	_, err = watch.UntilWithSync(ctx, listWatcher, objType, nil, func(event watchAPI.Event) (done bool, err error) {
 		switch event.Type {
 		case watchAPI.Error:
@@ -228,13 +301,15 @@ func waitForWorkloadToBeReady(ctx context.Context, clientset *kubernetes.Clients
 		default:
 			switch obj := event.Object.(type) {
 			case *appsv1.Deployment:
-				if obj.Status.ReadyReplicas == *obj.Spec.Replicas {
-					fmt.Println(gvks[0].Kind, name, "is ready")
+				if obj.ResourceVersion != accessor.GetResourceVersion() &&
+					obj.Status.ReadyReplicas == *obj.Spec.Replicas {
+					fmt.Println(gvks[0].Kind, name, "(ver."+obj.ResourceVersion+")", "is ready")
 					done = true
 				}
 			case *appsv1.DaemonSet:
-				if obj.Status.NumberReady == obj.Status.DesiredNumberScheduled {
-					fmt.Println(gvks[0].Kind, name, "is ready")
+				if obj.ResourceVersion != accessor.GetResourceVersion() &&
+					obj.Status.NumberReady == obj.Status.DesiredNumberScheduled {
+					fmt.Println(gvks[0].Kind, name, "(ver."+obj.ResourceVersion+")", "is ready")
 					done = true
 				}
 			default:
@@ -247,10 +322,32 @@ func waitForWorkloadToBeReady(ctx context.Context, clientset *kubernetes.Clients
 	return err
 }
 
+func fetchObject(ctx context.Context, clientset *kubernetes.Clientset, obj runtime.Object, name string) error {
+	gvks, _, err := scheme.Scheme.ObjectKinds(obj)
+	if err != nil {
+		return err
+	}
+
+	if len(gvks) == 0 {
+		panic(obj)
+	}
+
+	return clientset.AppsV1().RESTClient().Get().
+		Namespace(appNamespace).
+		Resource(strings.ToLower(gvks[0].Kind)+"s").
+		VersionedParams(&metav1.GetOptions{}, metav1.ParameterCodec).
+		Name(name).
+		Do(ctx).
+		Into(obj)
+}
+
 func NewCmdPrepare(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
 	o := PrepareOptions{
 		GlobalOptions: opts,
 		IOStreams:     streams,
+		idleLivesLast: 10 * time.Minute,
+		defaultShell:  string(appcorev1.CliAppShellBash),
+		defaultDistro: string(appcorev1.CliAppDistroAlpine),
 	}
 
 	var cmd = &cobra.Command{
@@ -270,6 +367,9 @@ kubectl dev prepare --builder-env GOPROXY='https://goproxy.cn|https://goproxy.io
 
 # Install cliapp via the latest remote manifests.
 kubectl dev prepare -u
+
+# Install cliapp w/o custom shell and distro
+kubectl dev prepare --minikube --distro ubuntu --shell zsh
 `,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -295,6 +395,14 @@ kubectl dev prepare -u
 		"If true, the latest online manifest will be downloaded.")
 	cmd.Flags().StringSliceVar(&o.builderEnvs, "builder-env", nil,
 		"Set environment variables for buildkit. Such as setting GOPROXY=goproxy.cn for go module.")
+
+	cmd.Flags().StringVar(&o.defaultDistro, "distro", o.defaultDistro,
+		"Linux distro that the app prefer. The default value is alpine. ubuntu is also supported.")
+	cmd.Flags().StringVar(&o.defaultShell, "shell", o.defaultShell,
+		"The shell you prefer. The default value is bash. You can also use zsh instead.")
+	cmd.Flags().DurationVar(&o.idleLivesLast, "idle-lives-last", o.idleLivesLast,
+		"Duration in that the background pod would be still alive even no active session opened.")
+
 	o.AddFlags(cmd.Flags())
 	return cmd
 }
