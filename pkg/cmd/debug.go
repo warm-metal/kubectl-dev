@@ -17,7 +17,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
+	"crypto/md5"
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/cliapp-session-gate/pkg/libcli"
@@ -59,7 +59,7 @@ func NewDebugOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStrea
 	}
 }
 
-func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
+func (o *DebugOptions) Complete(_ *cobra.Command, args []string) error {
 	if o.Raw().Namespace != nil && len(*o.Raw().Namespace) > 0 {
 		o.namespace = *o.Raw().Namespace
 	}
@@ -69,13 +69,12 @@ func (o *DebugOptions) Complete(cmd *cobra.Command, args []string) error {
 			return xerrors.Errorf("specify an image or an object")
 		}
 
-		encodedImage := base64.StdEncoding.EncodeToString([]byte(o.image))
-		o.instance = fmt.Sprintf("debugger-%s", encodedImage)
-		return nil
+		imageKey := fmt.Sprintf("%x", md5.Sum([]byte(o.image)))
+		o.instance = fmt.Sprintf("debugger-%s", imageKey)
+	} else {
+		o.kindAndName = strings.Join(args, "/")
+		o.instance = fmt.Sprintf("debugger-%s", strings.Replace(o.kindAndName, "/", "-", -1))
 	}
-
-	o.kindAndName = strings.Join(args, "/")
-	o.instance = fmt.Sprintf("debugger-%s", strings.Replace(o.kindAndName, "/", "-", -1))
 
 	o.app = &appcorev1.CliApp{
 		ObjectMeta: metav1.ObjectMeta{
@@ -216,7 +215,8 @@ kubectl dev debug --image foo:latest
 # Pass the local HTTP_PROXY to the debugger Pod.
 kubectl dev debug cronjob foo --use-proxy
 `,
-		SilenceUsage: true,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
