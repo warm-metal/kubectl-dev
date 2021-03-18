@@ -11,6 +11,7 @@ import (
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	"io"
+	"io/ioutil"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +51,9 @@ type PrepareOptions struct {
 
 	envs      []corev1.EnvVar
 	clientset *kubernetes.Clientset
+
+	shellRCFile string
+	shellRC     string
 }
 
 func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error) {
@@ -95,6 +99,19 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error)
 		})
 	}
 
+	if len(o.shellRCFile) > 0 {
+		if len(o.defaultShell) == 0 {
+			return xerrors.New("default shell is required for the rc file")
+		}
+
+		rc, err := ioutil.ReadFile(utils.ExpandTilde(o.shellRCFile))
+		if err != nil {
+			return err
+		}
+
+		o.shellRC = string(rc)
+	}
+
 	return nil
 }
 
@@ -132,6 +149,13 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		}
 	}
 
+	if len(o.defaultShell) > 0 && len(o.shellRC) > 0 {
+		err := updateShellRC(ctx, o.clientset, o.defaultShell, o.shellRC)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = updateDefaultConfiguration(ctx, o.clientset, o.defaultShell, o.defaultDistro, o.idleLivesLast)
 	if err != nil {
 		return err
@@ -154,6 +178,32 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 }
 
 const appNamespace = "cliapp-system"
+
+func updateShellRC(
+	ctx context.Context, clientset *kubernetes.Clientset, shell, rc string,
+) error {
+	key := ""
+	switch appcorev1.CliAppShell(shell) {
+	case appcorev1.CliAppShellBash:
+		key = ".bash_profile"
+	case appcorev1.CliAppShellZsh:
+		key = ".zshrc"
+	default:
+		return xerrors.Errorf("the default shell must be either %q or %q", appcorev1.CliAppShellBash,
+			appcorev1.CliAppShellZsh)
+	}
+
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "shell-context", metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		cm.Data[key] = rc
+		_, err = clientset.CoreV1().ConfigMaps(appNamespace).Update(ctx, cm, metav1.UpdateOptions{})
+		return err
+	})
+}
 
 func updateDeployEnv(
 	ctx context.Context, clientset *kubernetes.Clientset, name, container string, newEnvs []corev1.EnvVar, cleanProxy bool,
@@ -395,13 +445,14 @@ kubectl dev prepare --minikube --distro ubuntu --shell zsh
 		"If true, the latest online manifest will be downloaded.")
 	cmd.Flags().StringSliceVar(&o.builderEnvs, "builder-env", nil,
 		"Set environment variables for buildkit. Such as setting GOPROXY=goproxy.cn for go module.")
-
 	cmd.Flags().StringVar(&o.defaultDistro, "distro", o.defaultDistro,
 		"Linux distro that the app prefer. The default value is alpine. ubuntu is also supported.")
 	cmd.Flags().StringVar(&o.defaultShell, "shell", o.defaultShell,
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
 	cmd.Flags().DurationVar(&o.idleLivesLast, "idle-lives-last", o.idleLivesLast,
 		"Duration in that the background pod would be still alive even no active session opened.")
+	cmd.Flags().StringVar(&o.shellRCFile, "shell-rc", o.shellRCFile,
+		"Use a local shell resource file(~/.zshrc or ~/.bash_profile) in interactive cliapps or debuggers.")
 
 	o.AddFlags(cmd.Flags())
 	return cmd
