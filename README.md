@@ -101,7 +101,7 @@ kubectl dev debug pod foo --image bar:new-version
 kubectl dev debug --image foo:latest
 ```
 
-The default distro of debugger is `alpine`. `ubuntu` would be another option
+The default distro of debugger is `alpine`. `ubuntu` would be another option.
 You can also choose one of `bash` or `zsh` as your favorite in debuggers via option `--shell`.
 ```shell script
 kubectl dev debug -n cliapp-system deploy buildkitd --with-original-envs=false --shell zsh --distro ubuntu
