@@ -26,7 +26,26 @@ spec:
     singular: cliapp
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetPhase
+      name: TargetPhase
+      type: string
+    - jsonPath: .spec.distro
+      name: Distro
+      type: string
+    - jsonPath: .spec.shell
+      name: Shell
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.podName
+      name: Pod
+      type: string
+    - jsonPath: .status.error
+      name: Error
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: CliApp is the Schema for the cliapps API
@@ -197,6 +216,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -979,7 +999,26 @@ spec:
     singular: cliapp
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetPhase
+      name: TargetPhase
+      type: string
+    - jsonPath: .spec.distro
+      name: Distro
+      type: string
+    - jsonPath: .spec.shell
+      name: Shell
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.podName
+      name: Pod
+      type: string
+    - jsonPath: .status.error
+      name: Error
+      type: string
+    name: v1
     schema:
       openAPIV3Schema:
         description: CliApp is the Schema for the cliapps API
@@ -1150,6 +1189,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - ""
   resources:
