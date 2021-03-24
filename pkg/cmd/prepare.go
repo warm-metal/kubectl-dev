@@ -37,9 +37,10 @@ type PrepareOptions struct {
 	*opts.GlobalOptions
 	genericclioptions.IOStreams
 
-	defaultShell  string
-	defaultDistro string
-	idleLivesLast time.Duration
+	defaultShell          string
+	defaultDistro         string
+	defaultAppContetImage string
+	idleLivesLast         time.Duration
 
 	minikube        bool
 	useHTTPProxy    bool
@@ -132,6 +133,7 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 
 	workloads := map[string]runtime.Object{
 		"csi-image-warm-metal":      &appsv1.DaemonSet{},
+		"csi-configmap-warm-metal":  &appsv1.DaemonSet{},
 		"buildkitd":                 &appsv1.Deployment{},
 		"cliapp-controller-manager": &appsv1.Deployment{},
 		"cliapp-session-gate":       &appsv1.Deployment{},
@@ -156,8 +158,9 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		}
 	}
 
-	err = updateDefaultConfiguration(ctx, o.clientset, o.defaultShell, o.defaultDistro, o.idleLivesLast)
-	if err != nil {
+	if err = updateDefaultConfiguration(
+		ctx, o.clientset, o.defaultShell, o.defaultDistro, o.defaultAppContetImage, o.idleLivesLast,
+	); err != nil {
 		return err
 	}
 
@@ -194,7 +197,7 @@ func updateShellRC(
 	}
 
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "shell-context", metav1.GetOptions{})
+		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "cliapp-shell-context", metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -269,7 +272,8 @@ func updateDeployEnv(
 }
 
 func updateDefaultConfiguration(
-	ctx context.Context, clientset *kubernetes.Clientset, defaultShell, defaultDistro string, idleLivesLast time.Duration,
+	ctx context.Context, clientset *kubernetes.Clientset,
+	defaultShell, defaultDistro, defaultAppContetImage string, idleLivesLast time.Duration,
 ) error {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "cliapp-manager-config", metav1.GetOptions{})
@@ -290,6 +294,7 @@ func updateDefaultConfiguration(
 
 		conf.DefaultShell = defaultShell
 		conf.DefaultDistro = defaultDistro
+		conf.DefaultAppContextImage = defaultAppContetImage
 		conf.DurationIdleLivesLast = metav1.Duration{idleLivesLast}
 		y, err = yaml.Marshal(&conf)
 		if err != nil {
@@ -449,6 +454,8 @@ kubectl dev prepare --minikube --distro ubuntu --shell zsh
 		"Linux distro that the app prefer. The default value is alpine. ubuntu is also supported.")
 	cmd.Flags().StringVar(&o.defaultShell, "shell", o.defaultShell,
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
+	cmd.Flags().StringVar(&o.defaultAppContetImage, "app-context-image", "",
+		"The context image to start an app. It must have the default shell installed.")
 	cmd.Flags().DurationVar(&o.idleLivesLast, "idle-lives-last", o.idleLivesLast,
 		"Duration in that the background pod would be still alive even no active session opened.")
 	cmd.Flags().StringVar(&o.shellRCFile, "shell-rc", o.shellRCFile,

@@ -147,6 +147,12 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: csi-configmap-warm-metal
+  namespace: system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
   name: csi-image-warm-metal
   namespace: system
 ---
@@ -187,6 +193,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
@@ -200,9 +213,9 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - daemonset
+  - daemonsets
   - deployments
-  - replicaset
+  - replicasets
   - statefulsets
   verbs:
   - get
@@ -242,9 +255,9 @@ rules:
 - apiGroups:
   - extensions
   resources:
-  - daemonset
+  - daemonsets
   - deployments
-  - replicaset
+  - replicasets
   verbs:
   - get
 ---
@@ -336,6 +349,27 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: csi-configmap-warm-metal
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
   name: csi-image-warm-metal
 rules:
 - apiGroups:
@@ -414,6 +448,19 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
+  name: csi-configmap-warm-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csi-configmap-warm-metal
+subjects:
+- kind: ServiceAccount
+  name: csi-configmap-warm-metal
+  namespace: system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
   name: csi-image-warm-metal
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -450,6 +497,7 @@ metadata:
 apiVersion: v1
 data:
   .bash_history: ""
+  .zsh_history: ""
 kind: ConfigMap
 metadata:
   name: cliapp-shell-context
@@ -715,6 +763,89 @@ spec:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
+  name: csi-configmap-warm-metal
+  namespace: system
+spec:
+  selector:
+    matchLabels:
+      app: csi-configmap-warm-metal
+  template:
+    metadata:
+      labels:
+        app: csi-configmap-warm-metal
+    spec:
+      containers:
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-configmap.warm-metal.tech/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - rm -rf /registration/csi-configmap.warm-metal.tech /registration/csi-configmap.warm-metal.tech-reg.sock
+        name: node-driver-registrar
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /registration
+          name: registration-dir
+      - args:
+        - -endpoint=$(CSI_ENDPOINT)
+        - -node=$(KUBE_NODE_NAME)
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: docker.io/warmmetal/csi-configmap:v0.1.0
+        imagePullPolicy: IfNotPresent
+        name: plugin
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/lib/kubelet/pods
+          mountPropagation: Bidirectional
+          name: mountpoint-dir
+        - mountPath: /var/lib/warm-metal/cm-volume
+          name: cm-source-root
+      hostNetwork: true
+      serviceAccountName: csi-configmap-warm-metal
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/plugins/csi-configmap.warm-metal.tech
+          type: DirectoryOrCreate
+        name: socket-dir
+      - hostPath:
+          path: /var/lib/kubelet/pods
+          type: DirectoryOrCreate
+        name: mountpoint-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: Directory
+        name: registration-dir
+      - hostPath:
+          path: /var/lib/warm-metal/cm-volume
+          type: DirectoryOrCreate
+        name: cm-source-root
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
   name: csi-image-warm-metal
   namespace: system
 spec:
@@ -803,6 +934,16 @@ spec:
           path: /run/containerd/containerd.sock
           type: Socket
         name: runtime-socket
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi-cm.warm-metal.tech
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+  - Ephemeral
 ---
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
@@ -959,6 +1100,12 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: csi-configmap-warm-metal
+  namespace: cliapp-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
   name: csi-image-warm-metal
   namespace: cliapp-system
 ---
@@ -999,6 +1146,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
@@ -1012,9 +1166,9 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - daemonset
+  - daemonsets
   - deployments
-  - replicaset
+  - replicasets
   - statefulsets
   verbs:
   - get
@@ -1054,9 +1208,9 @@ rules:
 - apiGroups:
   - extensions
   resources:
-  - daemonset
+  - daemonsets
   - deployments
-  - replicaset
+  - replicasets
   verbs:
   - get
 ---
@@ -1148,6 +1302,27 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: csi-configmap-warm-metal
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
   name: csi-image-warm-metal
 rules:
 - apiGroups:
@@ -1226,6 +1401,19 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
+  name: csi-configmap-warm-metal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csi-configmap-warm-metal
+subjects:
+- kind: ServiceAccount
+  name: csi-configmap-warm-metal
+  namespace: cliapp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
   name: csi-image-warm-metal
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -1294,6 +1482,7 @@ metadata:
 apiVersion: v1
 data:
   .bash_history: ""
+  .zsh_history: ""
 kind: ConfigMap
 metadata:
   name: cliapp-shell-context
@@ -1528,6 +1717,89 @@ spec:
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
+  name: csi-configmap-warm-metal
+  namespace: cliapp-system
+spec:
+  selector:
+    matchLabels:
+      app: csi-configmap-warm-metal
+  template:
+    metadata:
+      labels:
+        app: csi-configmap-warm-metal
+    spec:
+      containers:
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-configmap.warm-metal.tech/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - rm -rf /registration/csi-configmap.warm-metal.tech /registration/csi-configmap.warm-metal.tech-reg.sock
+        name: node-driver-registrar
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /registration
+          name: registration-dir
+      - args:
+        - -endpoint=$(CSI_ENDPOINT)
+        - -node=$(KUBE_NODE_NAME)
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: docker.io/warmmetal/csi-configmap:v0.1.0
+        imagePullPolicy: IfNotPresent
+        name: plugin
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/lib/kubelet/pods
+          mountPropagation: Bidirectional
+          name: mountpoint-dir
+        - mountPath: /var/lib/warm-metal/cm-volume
+          name: cm-source-root
+      hostNetwork: true
+      serviceAccountName: csi-configmap-warm-metal
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/plugins/csi-configmap.warm-metal.tech
+          type: DirectoryOrCreate
+        name: socket-dir
+      - hostPath:
+          path: /var/lib/kubelet/pods
+          type: DirectoryOrCreate
+        name: mountpoint-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: Directory
+        name: registration-dir
+      - hostPath:
+          path: /var/lib/warm-metal/cm-volume
+          type: DirectoryOrCreate
+        name: cm-source-root
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
   name: csi-image-warm-metal
   namespace: cliapp-system
 spec:
@@ -1616,6 +1888,17 @@ spec:
           path: /run/containerd/containerd.sock
           type: Socket
         name: runtime-socket
+---
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: csi-cm.warm-metal.tech
+  namespace: cliapp-system
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+  - Ephemeral
 ---
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
