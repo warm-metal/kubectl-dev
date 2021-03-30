@@ -30,12 +30,6 @@ spec:
     - jsonPath: .spec.targetPhase
       name: TargetPhase
       type: string
-    - jsonPath: .spec.distro
-      name: Distro
-      type: string
-    - jsonPath: .spec.shell
-      name: Shell
-      type: string
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -44,6 +38,12 @@ spec:
       type: string
     - jsonPath: .status.error
       name: Error
+      type: string
+    - jsonPath: .spec.distro
+      name: Distro
+      type: string
+    - jsonPath: .spec.shell
+      name: Shell
       type: string
     name: v1
     schema:
@@ -830,7 +830,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: docker.io/warmmetal/csi-configmap:v0.1.0
+        image: docker.io/warmmetal/csi-configmap:v0.2.0
         imagePullPolicy: IfNotPresent
         name: plugin
         securityContext:
@@ -1003,12 +1003,6 @@ spec:
     - jsonPath: .spec.targetPhase
       name: TargetPhase
       type: string
-    - jsonPath: .spec.distro
-      name: Distro
-      type: string
-    - jsonPath: .spec.shell
-      name: Shell
-      type: string
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -1017,6 +1011,12 @@ spec:
       type: string
     - jsonPath: .status.error
       name: Error
+      type: string
+    - jsonPath: .spec.distro
+      name: Distro
+      type: string
+    - jsonPath: .spec.shell
+      name: Shell
       type: string
     name: v1
     schema:
@@ -1804,7 +1804,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: docker.io/warmmetal/csi-configmap:v0.1.0
+        image: docker.io/warmmetal/csi-configmap:v0.2.0
         imagePullPolicy: IfNotPresent
         name: plugin
         securityContext:
