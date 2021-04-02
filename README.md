@@ -24,10 +24,10 @@ You can also download the pre-built binary.
 
 ```shell script
 # For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.2.0/kubectl-dev.darwin-amd64.xz | tar -C /usr/local/bin/ -xpf -'
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.3.0/kubectl-dev.darwin-amd64.xz | tar -C /usr/local/bin/ -xpf -'
 
 # For Linux, run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.2.0/kubectl-dev.linux-amd64.xz | tar -C /usr/local/bin/ -xpf -'
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.3.0/kubectl-dev.linux-amd64.xz | tar -C /usr/local/bin/ -xpf -'
 ```
 
 ## Initialization

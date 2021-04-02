@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -e
 set -x
 
 [[ $# -lt 1 ]] && echo "version to be relased is required" && exit 2
@@ -37,3 +38,4 @@ popd
 git push origin $BRANCH
 
 set +x
+set +e
