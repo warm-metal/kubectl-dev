@@ -29,7 +29,7 @@ class KubectlDev < Formula
   def install
     system "go", "build", *std_go_args,
       "-ldflags",
-      "-X github.com/warm-metal/kubectl-dev/pkg/release.Version=${VERSION}" \
+      "-X github.com/warm-metal/kubectl-dev/pkg/release.Version=${VERSION}" \\
       " -X github.com/warm-metal/kubectl-dev/pkg/release.Commit=${COMMIT}",
       "./cmd/dev"
   end
@@ -71,7 +71,7 @@ class KubectlDev < Formula
   def install
     system "go", "build", *std_go_args,
       "-ldflags",
-      "-X github.com/warm-metal/kubectl-dev/pkg/release.Version=${VERSION}" \
+      "-X github.com/warm-metal/kubectl-dev/pkg/release.Version=${VERSION}" \\
       " -X github.com/warm-metal/kubectl-dev/pkg/release.Commit=${COMMIT}",
       "./cmd/dev"
   end
