@@ -19,6 +19,7 @@ type AppOptions struct {
 	namespace string
 
 	args []string
+	cmd  *cobra.Command
 }
 
 func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
@@ -27,6 +28,7 @@ func (o *AppOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	o.args = args
+	o.cmd = cmd
 	return nil
 }
 
@@ -60,6 +62,7 @@ func (o *AppOptions) Run(ctx context.Context) error {
 		return err
 	}
 
+	o.cmd.SilenceErrors = true
 	err = libcli.ExecCliApp(ctx, endpoints, app, o.args, o.In, o.Out)
 	if err != nil {
 		return xerrors.Errorf("unable to open app shell: %s", err)
@@ -83,8 +86,7 @@ Say cliapp "ctr", type "ctr i ls" in any shell context just like execute a local
 		Example: `# Run ctr to list all images
 kubectl-dev app -n app --name ctr -- i ls
 `,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
