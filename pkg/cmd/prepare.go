@@ -58,6 +58,11 @@ type PrepareOptions struct {
 }
 
 func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error) {
+	o.clientset, err = o.ClientSet()
+	if err != nil {
+		return err
+	}
+
 	if o.updateManifests {
 		if o.minikube {
 			o.manifestURL = latestMinikubeManifests
@@ -72,11 +77,6 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error)
 		o.manifestReader = strings.NewReader(minikubeManifests)
 	} else {
 		o.manifestReader = strings.NewReader(containerdManifests)
-	}
-
-	o.clientset, err = o.ClientSet()
-	if err != nil {
-		return err
 	}
 
 	if o.useHTTPProxy {
