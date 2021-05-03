@@ -42,6 +42,8 @@ type BuildOptions struct {
 	targetStage string
 	noCache     bool
 	buildArgs   []string
+	push        bool
+	insecure    bool
 
 	solveOpt buildkit.SolveOpt
 
@@ -86,12 +88,23 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(o.tag) > 0 {
-		o.solveOpt.Exports = append(o.solveOpt.Exports, buildkit.ExportEntry{
+		export := buildkit.ExportEntry{
 			Type: "image",
 			Attrs: map[string]string{
 				"name": o.tag,
 			},
-		})
+		}
+
+		if o.push {
+			export.Attrs["push"] = "true"
+		}
+
+		// FIXME test if the target registry is insecure.
+		if o.insecure {
+			export.Attrs["registry.insecure"] = "true"
+		}
+
+		o.solveOpt.Exports = append(o.solveOpt.Exports, export)
 	}
 
 	if len(o.localDir) > 0 {
@@ -228,6 +241,8 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 	cmd.Flags().StringSliceVar(&o.buildkitAddrs, "buildkit-addr", nil,
 		"Endpoints of the buildkitd. Must be a valid tcp or unix socket URL(tcp:// or unix://). If not set, "+
 			"automatically fetch them from the cluster")
+	cmd.Flags().BoolVar(&o.push, "push", false, "Push the image.")
+	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
 
 	o.AddFlags(cmd.Flags())
 	return cmd
