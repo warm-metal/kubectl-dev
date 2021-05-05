@@ -19,6 +19,8 @@ import (
 	"context"
 	"fmt"
 	buildkit "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/progress/progresswriter"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -44,6 +46,7 @@ type BuildOptions struct {
 	buildArgs   []string
 	push        bool
 	insecure    bool
+	platform    string
 
 	solveOpt buildkit.SolveOpt
 
@@ -149,6 +152,11 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.solveOpt.FrontendAttrs["no-cache"] = ""
 	}
 
+	if len(o.platform) > 0 {
+		o.solveOpt.FrontendAttrs["platform"] = o.platform
+	}
+
+	o.solveOpt.Session = []session.Attachable{authprovider.NewDockerAuthProvider(os.Stderr)}
 	return nil
 }
 
@@ -243,6 +251,7 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 			"automatically fetch them from the cluster")
 	cmd.Flags().BoolVar(&o.push, "push", false, "Push the image.")
 	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
+	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
 
 	o.AddFlags(cmd.Flags())
 	return cmd

@@ -69,14 +69,12 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error)
 		} else {
 			o.manifestURL = latestContainerdManifests
 		}
-
-		return nil
-	}
-
-	if o.minikube {
-		o.manifestReader = strings.NewReader(minikubeManifests)
 	} else {
-		o.manifestReader = strings.NewReader(containerdManifests)
+		if o.minikube {
+			o.manifestReader = strings.NewReader(minikubeManifests)
+		} else {
+			o.manifestReader = strings.NewReader(containerdManifests)
+		}
 	}
 
 	if o.useHTTPProxy {
@@ -144,11 +142,9 @@ func (o *PrepareOptions) Run(ctx context.Context) error {
 		return err
 	}
 
-	if len(o.envs) > 0 {
-		err := updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs, !o.useHTTPProxy)
-		if err != nil {
-			return err
-		}
+	err = updateDeployEnv(ctx, o.clientset, "buildkitd", "buildkitd", o.envs, !o.useHTTPProxy)
+	if err != nil {
+		return err
 	}
 
 	if len(o.defaultShell) > 0 && len(o.shellRC) > 0 {
