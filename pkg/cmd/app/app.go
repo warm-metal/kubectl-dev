@@ -103,7 +103,7 @@ kubectl-dev app -n app --name ctr -- i ls
 	}
 
 	cmd.Flags().StringVar(&o.name, "name", "", "App name. A random name would be used if not set.")
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 
 	cmd.AddCommand(
 		newAppInstallCmd(opts, streams),

@@ -101,6 +101,6 @@ kubectl dev app uninstall -n app ctr
 
 	cmd.Flags().StringVar(&o.shortcutRoot, "install-base", o.shortcutRoot,
 		"Directory where app to be installed. It should be one of the PATH.")
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 	return cmd
 }

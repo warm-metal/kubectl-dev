@@ -187,7 +187,7 @@ sudo -E kubectl dev app install --name ctr -n default --env CONTAINERD_NAMESPACE
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
 	cmd.Flags().StringVar(&o.shortcutRoot, "install-base", o.shortcutRoot,
 		"Directory where app to be installed. It should be one of the PATH.")
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 
 	return cmd
 }

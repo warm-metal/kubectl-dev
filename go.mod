@@ -5,6 +5,9 @@ go 1.15
 require github.com/spf13/cobra v1.1.1
 
 require (
+	github.com/docker/cli v20.10.6+incompatible
+	github.com/docker/docker v20.10.6+incompatible
+	github.com/fvbommel/sortorder v1.0.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.2.0 // indirect
@@ -15,6 +18,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5
+	github.com/theupdateframework/notary v0.7.0
 	github.com/warm-metal/cliapp v0.0.0-20210316130830-9bce66216aae
 	github.com/warm-metal/cliapp-session-gate v0.0.0-20210314100207-b25e2fc5d6aa
 	go.opencensus.io v0.22.5 // indirect
@@ -36,7 +40,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20210211043216-66d8d84e87dd // indirect
 	sigs.k8s.io/controller-runtime v0.8.2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.0.3 // indirect
-	sigs.k8s.io/yaml v1.2.0 // indirect
+	sigs.k8s.io/yaml v1.2.0
 )
 
 replace github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
