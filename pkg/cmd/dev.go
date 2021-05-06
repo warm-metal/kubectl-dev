@@ -50,11 +50,13 @@ kubectl dev build -t foo:tag -f Dockerfile .`,
 	cmd.AddCommand(
 		NewCmdPrepare(o, streams),
 		NewCmdDebug(o, streams),
-		NewCmd(o, streams),
+		NewCmdBuild(o, streams),
+		NewCmdLogin(o, streams),
+		NewCmdLogout(o, streams),
 		app.NewCmd(o, streams),
 	)
 	cmd.AddCommand(NewVersionCmd())
 
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 	return cmd
 }

@@ -245,7 +245,7 @@ kubectl dev debug cronjob foo --use-proxy
 		"The shell you prefer. The default value is bash. You can also use zsh instead.")
 	cmd.Flags().BoolVar(&o.alsoForkEnvs, "with-original-envs", true,
 		"Copy original labels if enabled. Such that network traffic could also gets into the debug Pod.")
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 
 	return cmd
 }

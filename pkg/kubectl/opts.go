@@ -31,7 +31,7 @@ func (o ConfigFlags) ClientSet() (*kubernetes.Clientset, error) {
 	return clientset, err
 }
 
-func (o *ConfigFlags) AddFlags(flags *pflag.FlagSet) {
+func (o *ConfigFlags) AddPersistentFlags(flags *pflag.FlagSet) {
 	o.configFlags.AddFlags(flags)
 }
 

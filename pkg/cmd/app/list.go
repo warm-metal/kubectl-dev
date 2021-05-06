@@ -106,6 +106,6 @@ kubectl dev app list -n app
 		},
 	}
 
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 	return cmd
 }

@@ -206,7 +206,7 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 	return nil
 }
 
-func NewCmd(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
+func NewCmdBuild(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *cobra.Command {
 	o := newBuilderOptions(opts, streams)
 
 	var cmd = &cobra.Command{
@@ -253,6 +253,6 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
 	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
 
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 	return cmd
 }

@@ -1,5 +1,6 @@
 .PHONY: default
 default:
+	go vet ./...
 	go build -o _output/kubectl-dev ./cmd/dev
 
 .PHONY: mac

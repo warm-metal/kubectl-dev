@@ -291,7 +291,7 @@ func updateDefaultConfiguration(
 		conf.DefaultShell = defaultShell
 		conf.DefaultDistro = defaultDistro
 		conf.DefaultAppContextImage = defaultAppContetImage
-		conf.DurationIdleLivesLast = metav1.Duration{idleLivesLast}
+		conf.DurationIdleLivesLast = metav1.Duration{Duration: idleLivesLast}
 		y, err = yaml.Marshal(&conf)
 		if err != nil {
 			return err
@@ -457,6 +457,6 @@ kubectl dev prepare --minikube --distro ubuntu --shell zsh
 	cmd.Flags().StringVar(&o.shellRCFile, "shell-rc", o.shellRCFile,
 		"Use a local shell resource file(~/.zshrc or ~/.bash_profile) in interactive cliapps or debuggers.")
 
-	o.AddFlags(cmd.Flags())
+	o.AddPersistentFlags(cmd.Flags())
 	return cmd
 }
