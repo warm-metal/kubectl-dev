@@ -7,7 +7,7 @@ Currently, the plugin can only work on **containerd**.
 
 ## Features
 * Debug workloads or images,
-* Image Builder for containerd, w/ host HTTP_PROXY settings,
+* Multi-arch image Builder for containerd, w/ host HTTP_PROXY settings,
 * [CliApp](https://github.com/warm-metal/cliapp#cliapp).
 
 ## Installation
@@ -24,10 +24,10 @@ You can also download the pre-built binary.
 
 ```shell script
 # For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.3.0/kubectl-dev.darwin-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.darwin-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
 
 # For Linux, run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.3.0/kubectl-dev.linux-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.linux-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
 ```
 
 ## Initialization
@@ -66,6 +66,17 @@ The build command also can copy artifacts from a stage to a local directory.
 ```shell script
 # Build the stage mac-cli and copy generated to the local directory _output.
 kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
+```
+
+### Private image and insecure image registry
+The builder also support pushing private images and insecure registries.
+
+```shell script
+# Log into a image registry as using "docker login"
+kubectl dev login
+
+# Build image and push it to an insecure registry.
+kubectl dev build -t foo:bar --push --insecure
 ```
 
 ### Debug workloads

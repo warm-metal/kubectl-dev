@@ -125,7 +125,7 @@ spec:
             description: CliAppStatus defines the observed state of CliApp
             properties:
               error:
-                description: Specify Errors on reconcile
+                description: Specify Errors on reconcile.
                 type: string
               lastPhaseTransition:
                 description: Timestamp of the last phase transition
@@ -530,7 +530,7 @@ data:
     debug = true
     # root is where all buildkit state is stored.
     root = "/var/lib/buildkit"
-    snapshot-root = "/var/lib/buildkit/local-snapshot"
+    local-mount-source-root = "/var/lib/buildkit/local-mnt-src"
     # insecure-entitlements allows insecure entitlements, disabled by default.
     insecure-entitlements = [ "network.host", "security.insecure" ]
 
@@ -545,7 +545,7 @@ data:
     [worker.containerd]
       address = "/run/containerd/containerd.sock"
       enabled = true
-      platforms = [ "linux/amd64" ]
+      platforms = [ "linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6", "linux/riscv64", "linux/ppc64le", "linux/s390x", "linux/386", "linux/mips64le", "linux/mips64" ]
       namespace = "k8s.io"
       gc = true
       [[worker.containerd.gcpolicy]]
@@ -553,7 +553,7 @@ data:
         keepDuration = 3600
 kind: ConfigMap
 metadata:
-  name: buildkitd.toml-55httfg5dm
+  name: buildkitd.toml-2fc6k85c68
 ---
 apiVersion: v1
 kind: Service
@@ -623,7 +623,7 @@ spec:
         - --config=controller_manager_config.yaml
         command:
         - /manager
-        image: docker.io/warmmetal/cliapp-controller:v0.3.0
+        image: docker.io/warmmetal/cliapp-controller:v0.4.0
         livenessProbe:
           httpGet:
             path: /healthz
@@ -686,7 +686,7 @@ spec:
         app: session-gate
     spec:
       containers:
-      - image: docker.io/warmmetal/session-gate:v0.2.0
+      - image: docker.io/warmmetal/session-gate:v0.3.0
         name: session-gate
         ports:
         - containerPort: 8001
@@ -718,7 +718,7 @@ spec:
       - env:
         - name: BUILDKIT_STEP_LOG_MAX_SIZE
           value: "-1"
-        image: docker.io/warmmetal/buildkit:0.8.1-1
+        image: docker.io/warmmetal/buildkit:v0.8.3-0
         livenessProbe:
           exec:
             command:
@@ -1106,7 +1106,7 @@ spec:
             description: CliAppStatus defines the observed state of CliApp
             properties:
               error:
-                description: Specify Errors on reconcile
+                description: Specify Errors on reconcile.
                 type: string
               lastPhaseTransition:
                 description: Timestamp of the last phase transition
@@ -1479,7 +1479,7 @@ data:
     debug = true
     # root is where all buildkit state is stored.
     root = "/var/lib/buildkit"
-    snapshot-root = "/var/lib/buildkit/local-snapshot"
+    local-mount-source-root = "/var/lib/buildkit/local-mnt-src"
     # insecure-entitlements allows insecure entitlements, disabled by default.
     insecure-entitlements = [ "network.host", "security.insecure" ]
 
@@ -1494,7 +1494,7 @@ data:
     [worker.containerd]
       address = "/run/containerd/containerd.sock"
       enabled = true
-      platforms = [ "linux/amd64" ]
+      platforms = [ "linux/amd64", "linux/arm64", "linux/arm/v7", "linux/arm/v6", "linux/riscv64", "linux/ppc64le", "linux/s390x", "linux/386", "linux/mips64le", "linux/mips64" ]
       namespace = "k8s.io"
       gc = true
       [[worker.containerd.gcpolicy]]
@@ -1502,7 +1502,7 @@ data:
         keepDuration = 3600
 kind: ConfigMap
 metadata:
-  name: buildkitd.toml-55httfg5dm
+  name: buildkitd.toml-2fc6k85c68
   namespace: cliapp-system
 ---
 apiVersion: v1
@@ -1609,7 +1609,7 @@ spec:
       - env:
         - name: BUILDKIT_STEP_LOG_MAX_SIZE
           value: "-1"
-        image: docker.io/warmmetal/buildkit:0.8.1-1
+        image: docker.io/warmmetal/buildkit:v0.8.3-0
         livenessProbe:
           exec:
             command:
@@ -1665,7 +1665,7 @@ spec:
           items:
           - key: buildkitd.toml
             path: buildkitd.toml
-          name: buildkitd.toml-55httfg5dm
+          name: buildkitd.toml-2fc6k85c68
         name: buildkitd-conf
       - hostPath:
           path: /run/containerd
@@ -1694,7 +1694,7 @@ spec:
         - --config=controller_manager_config.yaml
         command:
         - /manager
-        image: docker.io/warmmetal/cliapp-controller:v0.3.0
+        image: docker.io/warmmetal/cliapp-controller:v0.4.0
         livenessProbe:
           httpGet:
             path: /healthz
@@ -1757,7 +1757,7 @@ spec:
         app: session-gate
     spec:
       containers:
-      - image: docker.io/warmmetal/session-gate:v0.2.0
+      - image: docker.io/warmmetal/session-gate:v0.3.0
         name: session-gate
         ports:
         - containerPort: 8001
