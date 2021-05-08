@@ -55,7 +55,7 @@ func (o *appInstallOptions) Complete(_ *cobra.Command, args []string) error {
 			Command:     args,
 			HostPath:    o.hostPaths,
 			Env:         o.envs,
-			TargetPhase: appcorev1.CliAppPhaseLive,
+			TargetPhase: appcorev1.CliAppPhaseRest,
 		},
 	}
 

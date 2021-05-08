@@ -19,27 +19,21 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/theupdateframework/notary v0.7.0
-	github.com/warm-metal/cliapp v0.0.0-20210316130830-9bce66216aae
-	github.com/warm-metal/cliapp-session-gate v0.0.0-20210314100207-b25e2fc5d6aa
+	github.com/warm-metal/cliapp v0.0.0-20210508072337-996296ea0bf6
 	go.opencensus.io v0.22.5 // indirect
-	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad // indirect
-	golang.org/x/net v0.0.0-20210119194325-5f4716e94777 // indirect
 	golang.org/x/oauth2 v0.0.0-20210210192628-66670185b0cd // indirect
-	golang.org/x/term v0.0.0-20201210144234-2321bbc49cbf // indirect
 	golang.org/x/text v0.3.5 // indirect
-	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20210202153253-cf70463f6119 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
-	k8s.io/api v0.20.2
-	k8s.io/apimachinery v0.20.2
+	k8s.io/api v0.21.0
+	k8s.io/apimachinery v0.21.0
 	k8s.io/cli-runtime v0.20.2
-	k8s.io/client-go v0.20.2
-	k8s.io/kube-openapi v0.0.0-20210211043216-66d8d84e87dd // indirect
+	k8s.io/client-go v0.21.0
 	sigs.k8s.io/controller-runtime v0.8.2 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.0.3 // indirect
+	sigs.k8s.io/kustomize v2.0.3+incompatible // indirect
 	sigs.k8s.io/yaml v1.2.0
 )
 

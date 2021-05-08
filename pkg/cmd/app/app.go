@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"github.com/spf13/cobra"
-	"github.com/warm-metal/cliapp-session-gate/pkg/libcli"
 	appv1 "github.com/warm-metal/cliapp/pkg/clientset/versioned"
+	"github.com/warm-metal/cliapp/pkg/libcli"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"golang.org/x/xerrors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
