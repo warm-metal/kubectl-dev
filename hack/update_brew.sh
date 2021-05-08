@@ -14,6 +14,7 @@ SOURCE_CHECKSUM=$(curl -skL "${SOURCE}" | shasum -ba 256 - | awk '{ print $1 }')
 BREW_HOME=$(brew config | grep HOMEBREW_PREFIX | awk '{ print $2 }')
 FORMULA_HOME=${BREW_HOME}/Library/Taps/warm-metal/homebrew-rc
 FORMULA_FILE=${FORMULA_HOME}/Formula/kubectl-dev.rb
+mkdir -p $(dirname ${FORMULA_FILE})
 
 FORMULA_WO_BOTTLE=$(cat <<-EOF
 class KubectlDev < Formula
@@ -41,15 +42,22 @@ end
 EOF
 )
 
+set +e
 brew list warm-metal/rc/kubectl-dev > /dev/null
 if [ $? -eq 0 ]; then
   echo "Uninstall formula"
   brew uninstall warm-metal/rc/kubectl-dev
 fi
+set -e
+
+echo "${FORMULA_WO_BOTTLE}" > "${FORMULA_FILE}"
+echo "Install from source"
+brew install warm-metal/rc/kubectl-dev
+brew uninstall warm-metal/rc/kubectl-dev
 
 echo "Build bottle"
 brew install --build-bottle warm-metal/rc/kubectl-dev
-echo "${FORMULA_WO_BOTTLE}" > "${FORMULA_FILE}"
+
 BOTTLE=$(brew bottle warm-metal/rc/kubectl-dev | grep sha256 | awk '{$1=$1};1')
 
 Formula=$(cat <<-EOF
@@ -87,7 +95,7 @@ echo "${Formula}" > "${FORMULA_FILE}"
 
 pushd ${FORMULA_HOME}
 git add "Formula/kubectl-dev.rb"
-git commit -m "kubectl-dev v0.3.0"
+git commit -m "kubectl-dev ${VERSION}"
 git push origin main
 popd
 
