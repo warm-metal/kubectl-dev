@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: binfmt-register
+spec:
+  template:
+    metadata:
+      name: binfmt-register
+    spec:
+      containers:
+      - name: binfmt-register
+        image: docker.io/warmmetal/binfmt:qemu-v6.0.0
+        command:
+          - sh
+        args:
+          - -c
+          - "cp -pf /usr/bin/qemu-* /host/usr/bin/ && /usr/bin/binfmt --install all"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /host/usr/bin
+          name: usr-bin
+      restartPolicy: OnFailure
+      volumes:
+      - hostPath:
+          path: /usr/bin
+          type: Directory
+        name: usr-bin
+---
+apiVersion: core.systemd.warmmetal.tech/v1
+kind: Unit
+metadata:
+  name: binfmt-register
+spec:
+  job:
+    kind: Job
+    name: binfmt-register
+    namespace: default
