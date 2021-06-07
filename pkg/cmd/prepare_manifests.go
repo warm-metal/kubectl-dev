@@ -827,8 +827,6 @@ spec:
         env:
         - name: CSI_ENDPOINT
           value: unix:///csi/csi.sock
-        - name: HOST_ROOTFS
-          value: /host
         - name: CRI_ADDR
           value: unix:///run/containerd/containerd.sock
         - name: KUBE_NODE_NAME
@@ -836,11 +834,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        image: docker.io/warmmetal/csi-image:v0.4.2
+        image: docker.io/warmmetal/csi-image:v0.5.1
         imagePullPolicy: IfNotPresent
         name: plugin
         securityContext:
@@ -853,9 +847,9 @@ spec:
           name: mountpoint-dir
         - mountPath: /run/containerd/containerd.sock
           name: runtime-socket
-        - mountPath: /host
+        - mountPath: /mnt/vda1/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
           mountPropagation: Bidirectional
-          name: host-rootfs
+          name: snapshot-root-0
       hostNetwork: true
       serviceAccountName: csi-image-warm-metal
       volumes:
@@ -872,13 +866,13 @@ spec:
           type: Directory
         name: registration-dir
       - hostPath:
-          path: /
-          type: Directory
-        name: host-rootfs
-      - hostPath:
           path: /run/containerd/containerd.sock
           type: Socket
         name: runtime-socket
+      - hostPath:
+          path: /mnt/vda1/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+          type: Directory
+        name: snapshot-root-0
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -1892,8 +1886,6 @@ spec:
         env:
         - name: CSI_ENDPOINT
           value: unix:///csi/csi.sock
-        - name: HOST_ROOTFS
-          value: /host
         - name: CRI_ADDR
           value: unix:///run/containerd/containerd.sock
         - name: KUBE_NODE_NAME
@@ -1901,11 +1893,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        image: docker.io/warmmetal/csi-image:v0.4.2
+        image: docker.io/warmmetal/csi-image:v0.5.1
         imagePullPolicy: IfNotPresent
         name: plugin
         securityContext:
@@ -1918,9 +1906,9 @@ spec:
           name: mountpoint-dir
         - mountPath: /run/containerd/containerd.sock
           name: runtime-socket
-        - mountPath: /host
+        - mountPath: /mnt/vda1/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
           mountPropagation: Bidirectional
-          name: host-rootfs
+          name: snapshot-root-0
       hostNetwork: true
       serviceAccountName: csi-image-warm-metal
       volumes:
@@ -1937,13 +1925,13 @@ spec:
           type: Directory
         name: registration-dir
       - hostPath:
-          path: /
-          type: Directory
-        name: host-rootfs
-      - hostPath:
           path: /run/containerd/containerd.sock
           type: Socket
         name: runtime-socket
+      - hostPath:
+          path: /mnt/vda1/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs
+          type: Directory
+        name: snapshot-root-0
 ---
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
