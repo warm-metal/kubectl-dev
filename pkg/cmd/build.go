@@ -86,8 +86,18 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
 	}
 
+	buildCtx := "."
+	if len(args) > 0 {
+		buildCtx = args[0]
+	}
+
 	if len(o.tag) == 0 && len(o.localDir) == 0 {
-		return fmt.Errorf("set either a tag or a local path")
+		absCtx, err := filepath.Abs(buildCtx)
+		if err != nil {
+			return err
+		}
+		o.tag = fmt.Sprintf("build.local/x/%s:v0.0.0", filepath.Base(absCtx))
+		fmt.Printf("Neither image tag nor local binary is given. \nAssuming to build a local image for testing: %s\n", o.tag)
 	}
 
 	if len(o.tag) > 0 {
@@ -123,11 +133,6 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 	if u, err := url.Parse(o.dockerfile); err == nil && strings.HasPrefix(u.Scheme, "http") {
 		o.solveOpt.FrontendAttrs["context"] = o.dockerfile
 		return nil
-	}
-
-	buildCtx := "."
-	if len(args) > 0 {
-		buildCtx = args[0]
 	}
 
 	dockerfile := o.dockerfile
