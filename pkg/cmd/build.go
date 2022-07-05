@@ -18,6 +18,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -28,11 +34,6 @@ import (
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 )
 
 type BuildOptions struct {
@@ -47,6 +48,7 @@ type BuildOptions struct {
 	push        bool
 	insecure    bool
 	platform    string
+	noProxy     bool
 
 	solveOpt buildkit.SolveOpt
 
@@ -161,6 +163,18 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.solveOpt.FrontendAttrs["platform"] = o.platform
 	}
 
+	if !o.noProxy {
+		const buildArgPrefix = "build-arg:"
+		proxies, err := utils.GetSysProxy()
+		if err == nil {
+			for _, proxy := range proxies {
+				o.solveOpt.FrontendAttrs[buildArgPrefix+proxy.Name] = proxy.Value
+			}
+		} else {
+			fmt.Println(err.Error())
+		}
+	}
+
 	o.solveOpt.Session = []session.Attachable{authprovider.NewDockerAuthProvider(os.Stderr)}
 	return nil
 }
@@ -257,6 +271,7 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 	cmd.Flags().BoolVar(&o.push, "push", false, "Push the image.")
 	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
 	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
+	cmd.Flags().BoolVar(&o.noProxy, "no-proxy", false, "Do not pass through local proxy configuration when building.")
 
 	o.AddPersistentFlags(cmd.Flags())
 	return cmd
