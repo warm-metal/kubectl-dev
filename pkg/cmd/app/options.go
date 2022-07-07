@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
-	"golang.org/x/xerrors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -26,11 +25,11 @@ func initShortcutInstallOptions() shortcutInstallOptions {
 
 func (o *shortcutInstallOptions) init(app string) error {
 	if len(o.shortcutRoot) == 0 {
-		return xerrors.Errorf("install-base not set")
+		return fmt.Errorf("install-base not set")
 	}
 
 	if path, found := os.LookupEnv("PATH"); !found || strings.Index(path, o.shortcutRoot) < 0 {
-		return xerrors.Errorf("install-base not found in PATH")
+		return fmt.Errorf("install-base not found in PATH")
 	}
 
 	o.shortcutRoot = utils.ExpandTilde(o.shortcutRoot)
@@ -56,7 +55,7 @@ func (o *shortcutInstallOptions) installShortcut(app, namespace string) error {
 	for _, path := range []string{o.appPath, o.shortcutPath} {
 		_, err := os.Lstat(path)
 		if err != nil && !os.IsNotExist(err) && !os.IsExist(err) {
-			return xerrors.Errorf(`"%s" %s`, path, err)
+			return fmt.Errorf(`"%s" %s`, path, err)
 		}
 	}
 

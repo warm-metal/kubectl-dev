@@ -25,7 +25,6 @@ import (
 	"github.com/warm-metal/cliapp/pkg/libcli"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
-	"golang.org/x/xerrors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -66,7 +65,7 @@ func (o *DebugOptions) Complete(_ *cobra.Command, args []string) error {
 
 	if len(args) == 0 {
 		if len(o.image) == 0 {
-			return xerrors.Errorf("specify an image or an object")
+			return fmt.Errorf("specify an image or an object")
 		}
 
 		imageKey := fmt.Sprintf("%x", md5.Sum([]byte(o.image)))
@@ -137,7 +136,7 @@ func (o *DebugOptions) Validate() error {
 	return nil
 }
 
-func (o *DebugOptions) Run(ctx context.Context) error {
+func (o *DebugOptions) Run(ctx context.Context, cmd *cobra.Command) error {
 	conf, err := o.Raw().ToRESTConfig()
 	if err != nil {
 		return err
@@ -176,9 +175,11 @@ func (o *DebugOptions) Run(ctx context.Context) error {
 		return err
 	}
 
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
 	err = libcli.ExecCliApp(ctx, endpoints, app, []string{string(app.Spec.Shell)}, o.In, o.Out)
 	if err != nil {
-		return xerrors.Errorf("unable to open app shell: %s", err)
+		return fmt.Errorf("unable to open app shell: %s", err)
 	}
 
 	return nil
@@ -215,8 +216,6 @@ kubectl dev debug --image foo:latest
 # Pass the local HTTP_PROXY to the debugger Pod.
 kubectl dev debug cronjob foo --use-proxy
 `,
-		SilenceUsage:  true,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := o.Complete(cmd, args); err != nil {
 				return err
@@ -224,7 +223,7 @@ kubectl dev debug cronjob foo --use-proxy
 			if err := o.Validate(); err != nil {
 				return err
 			}
-			if err := o.Run(cmd.Context()); err != nil {
+			if err := o.Run(cmd.Context(), cmd); err != nil {
 				return err
 			}
 

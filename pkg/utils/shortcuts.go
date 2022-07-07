@@ -3,7 +3,6 @@ package utils
 import (
 	"context"
 	"fmt"
-	"golang.org/x/xerrors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -11,7 +10,7 @@ import (
 func FetchServiceEndpoints(ctx context.Context, clientset *kubernetes.Clientset, namespace, service, port string) (addrs []string, err error) {
 	svc, err := clientset.CoreV1().Services(namespace).Get(ctx, service, metav1.GetOptions{})
 	if err != nil {
-		return nil, xerrors.Errorf(
+		return nil, fmt.Errorf(
 			`can't fetch endpoint from Service "%s/%s": %s`, namespace, service, err)
 	}
 
@@ -42,7 +41,7 @@ func FetchServiceEndpoints(ctx context.Context, clientset *kubernetes.Clientset,
 	if nodePort > 0 {
 		nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
-			return nil, xerrors.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
+			return nil, fmt.Errorf(`can't list node while enumerating Service NodePort: %s`, err)
 		}
 
 		for _, node := range nodes.Items {

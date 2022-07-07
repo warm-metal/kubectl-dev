@@ -1,8 +1,8 @@
 package kubectl
 
 import (
+	"fmt"
 	"github.com/spf13/pflag"
-	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 )
@@ -20,12 +20,12 @@ func NewConfigFlags() ConfigFlags {
 func (o ConfigFlags) ClientSet() (*kubernetes.Clientset, error) {
 	config, err := o.configFlags.ToRESTConfig()
 	if err != nil {
-		return nil, xerrors.Errorf("invalid kubectl configuration: %s", err)
+		return nil, fmt.Errorf("invalid kubectl configuration: %s", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, xerrors.Errorf("invalid kubectl configuration: %s", err)
+		return nil, fmt.Errorf("invalid kubectl configuration: %s", err)
 	}
 
 	return clientset, err

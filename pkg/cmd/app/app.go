@@ -2,11 +2,11 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"github.com/spf13/cobra"
 	appv1 "github.com/warm-metal/cliapp/pkg/clientset/versioned"
 	"github.com/warm-metal/cliapp/pkg/libcli"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
-	"golang.org/x/xerrors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
@@ -65,7 +65,7 @@ func (o *AppOptions) Run(ctx context.Context) error {
 	o.cmd.SilenceErrors = true
 	err = libcli.ExecCliApp(ctx, endpoints, app, o.args, o.In, o.Out)
 	if err != nil {
-		return xerrors.Errorf("unable to open app shell: %s", err)
+		return fmt.Errorf("unable to open app shell: %s", err)
 	}
 
 	return nil

@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/docker/cli/cli/command"
 	cliconfig "github.com/docker/cli/cli/config"
@@ -32,11 +33,9 @@ import (
 	registrytypes "github.com/docker/docker/api/types/registry"
 	dockerCli "github.com/docker/docker/client"
 	"github.com/docker/docker/registry"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	notaryCli "github.com/theupdateframework/notary/client"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
-	"golang.org/x/xerrors"
 	"io"
 	"io/ioutil"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -58,6 +57,10 @@ type CredOptions struct {
 	passwordStdin bool
 
 	isDefaultRegistry bool
+}
+
+func (o *CredOptions) BuildKitEnabled() (bool, error) {
+	return false, nil
 }
 
 func (o *CredOptions) NotaryClient(imgRefAndAuth trust.ImageRefAndAuth, actions []string) (notaryCli.Repository, error) {
@@ -96,10 +99,6 @@ func (o *CredOptions) ServerInfo() command.ServerInfo {
 	panic("not used")
 }
 
-func (o *CredOptions) ClientInfo() command.ClientInfo {
-	panic("not used")
-}
-
 func (o *CredOptions) DefaultVersion() string {
 	panic("not used")
 }
@@ -124,10 +123,6 @@ func (o *CredOptions) CurrentContext() string {
 	panic("not used")
 }
 
-func (o *CredOptions) StackOrchestrator(flagValue string) (command.Orchestrator, error) {
-	panic("not used")
-}
-
 func (o *CredOptions) DockerEndpoint() docker.Endpoint {
 	panic("not used")
 }
@@ -145,7 +140,7 @@ const dockerIndexServer = "https://index.docker.io/v1/"
 
 func (o *CredOptions) Complete(cmd *cobra.Command, args []string) error {
 	if len(args) > 1 {
-		return xerrors.New("only one argument can be received as the registry server.")
+		return errors.New("only one argument can be received as the registry server.")
 	}
 
 	if len(args) > 0 {
@@ -159,11 +154,11 @@ func (o *CredOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	if o.passwordStdin {
 		if len(o.username) == 0 {
-			return xerrors.New("--username is required with the password")
+			return errors.New("--username is required with the password")
 		}
 
 		if len(o.password) == 0 {
-			return xerrors.New("--password and --password-stdin are mutually exclusive")
+			return errors.New("--password and --password-stdin are mutually exclusive")
 		}
 
 		contents, err := ioutil.ReadAll(o.In())
@@ -183,22 +178,22 @@ func (o *CredOptions) Validate() error {
 }
 
 func (o *CredOptions) Login(ctx context.Context) (err error) {
-	var authConfig *dockerTypes.AuthConfig
+	var authConfig dockerTypes.AuthConfig
 	var response registrytypes.AuthenticateOKBody
 	authConfig, err = command.GetDefaultAuthConfig(
 		o, o.username == "" && o.password == "", o.server, o.isDefaultRegistry,
 	)
 	if err == nil && authConfig.Username != "" && authConfig.Password != "" {
-		response, err = loginClientSide(ctx, authConfig)
+		response, err = loginClientSide(ctx, &authConfig)
 	}
 
 	if err != nil || authConfig.Username == "" || authConfig.Password == "" {
-		err = command.ConfigureAuth(o, o.username, o.password, authConfig, o.isDefaultRegistry)
+		err = command.ConfigureAuth(o, o.username, o.password, &authConfig, o.isDefaultRegistry)
 		if err != nil {
 			return err
 		}
 
-		response, err = loginClientSide(ctx, authConfig)
+		response, err = loginClientSide(ctx, &authConfig)
 		if err != nil {
 			return err
 		}
@@ -210,8 +205,8 @@ func (o *CredOptions) Login(ctx context.Context) (err error) {
 	}
 
 	creds := o.ConfigFile().GetCredentialsStore(o.server)
-	if err := creds.Store(configtypes.AuthConfig(*authConfig)); err != nil {
-		return errors.Errorf("Error saving credentials: %v", err)
+	if err := creds.Store(configtypes.AuthConfig(authConfig)); err != nil {
+		return fmt.Errorf("Error saving credentials: %v", err)
 	}
 
 	if response.Status != "" {

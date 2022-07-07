@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/spf13/cobra"
 	appcorev1 "github.com/warm-metal/cliapp/pkg/apis/cliapp/v1"
@@ -9,7 +10,6 @@ import (
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
-	"golang.org/x/xerrors"
 	"io"
 	"io/ioutil"
 	corev1 "k8s.io/api/core/v1"
@@ -100,7 +100,7 @@ func (o *PrepareOptions) Complete(cmd *cobra.Command, args []string) (err error)
 
 	if len(o.shellRCFile) > 0 {
 		if len(o.defaultShell) == 0 {
-			return xerrors.New("default shell is required for the rc file")
+			return errors.New("default shell is required for the rc file")
 		}
 
 		rc, err := ioutil.ReadFile(utils.ExpandTilde(o.shellRCFile))
@@ -188,7 +188,7 @@ func updateShellRC(
 	case appcorev1.CliAppShellZsh:
 		key = ".zshrc"
 	default:
-		return xerrors.Errorf("the default shell must be either %q or %q", appcorev1.CliAppShellBash,
+		return fmt.Errorf("the default shell must be either %q or %q", appcorev1.CliAppShellBash,
 			appcorev1.CliAppShellZsh)
 	}
 
@@ -269,7 +269,7 @@ func updateDeployEnv(
 
 func updateDefaultConfiguration(
 	ctx context.Context, clientset *kubernetes.Clientset,
-	defaultShell, defaultDistro, defaultAppContetImage string, idleLivesLast time.Duration,
+	defaultShell, defaultDistro, defaultAppContextImage string, idleLivesLast time.Duration,
 ) error {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cm, err := clientset.CoreV1().ConfigMaps(appNamespace).Get(ctx, "cliapp-manager-config", metav1.GetOptions{})
@@ -290,7 +290,7 @@ func updateDefaultConfiguration(
 
 		conf.DefaultShell = defaultShell
 		conf.DefaultDistro = defaultDistro
-		conf.DefaultAppContextImage = defaultAppContetImage
+		conf.DefaultAppContextImage = defaultAppContextImage
 		conf.DurationIdleLivesLast = metav1.Duration{Duration: idleLivesLast}
 		y, err = yaml.Marshal(&conf)
 		if err != nil {
@@ -341,9 +341,9 @@ func waitForWorkloadsToBeReady(ctx context.Context, clientset *kubernetes.Client
 		case watchAPI.Error:
 			st, ok := event.Object.(*metav1.Status)
 			if ok {
-				err = xerrors.Errorf("failed %s", st.Message)
+				err = fmt.Errorf("failed %s", st.Message)
 			} else {
-				err = xerrors.Errorf("unknown error:%#v", event.Object)
+				err = fmt.Errorf("unknown error:%#v", event.Object)
 			}
 
 			return

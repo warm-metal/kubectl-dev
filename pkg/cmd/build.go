@@ -26,7 +26,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
-	"golang.org/x/xerrors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"net/url"
 	"os"
@@ -191,19 +190,19 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 	}
 
 	if client == nil {
-		return xerrors.Errorf("all builder endpoints are unavailable")
+		return fmt.Errorf("all builder endpoints are unavailable")
 	}
 
 	defer client.Close()
 
 	pw, err := progresswriter.NewPrinter(ctx, os.Stderr, "")
 	if err != nil {
-		return xerrors.Errorf("can't initialize progress writer: %s", err)
+		return fmt.Errorf("can't initialize progress writer: %s", err)
 	}
 
 	if _, err = client.Solve(ctx, nil, o.solveOpt, pw.Status()); err != nil {
 		<-pw.Done()
-		return xerrors.Errorf("%s", err)
+		return fmt.Errorf("%s", err)
 	}
 
 	<-pw.Done()

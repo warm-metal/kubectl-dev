@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 	appv1 "github.com/warm-metal/cliapp/pkg/clientset/versioned"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
-	"golang.org/x/xerrors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -24,7 +23,7 @@ type appUninstallOptions struct {
 func (o *appUninstallOptions) Complete(cmd *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		cmd.SilenceUsage = false
-		return xerrors.Errorf("invalid arguments")
+		return fmt.Errorf("invalid arguments")
 	}
 
 	o.name = args[0]

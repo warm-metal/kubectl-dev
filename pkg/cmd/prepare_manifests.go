@@ -718,7 +718,7 @@ spec:
       - env:
         - name: BUILDKIT_STEP_LOG_MAX_SIZE
           value: "-1"
-        image: docker.io/warmmetal/buildkit:v0.8.3-0
+        image: docker.io/warmmetal/buildkit:latest
         livenessProbe:
           exec:
             command:
@@ -1603,7 +1603,7 @@ spec:
       - env:
         - name: BUILDKIT_STEP_LOG_MAX_SIZE
           value: "-1"
-        image: docker.io/warmmetal/buildkit:v0.8.3-0
+        image: docker.io/warmmetal/buildkit:latest
         livenessProbe:
           exec:
             command:

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"golang.org/x/xerrors"
 	corev1 "k8s.io/api/core/v1"
 	"net"
 	"net/url"
@@ -26,12 +25,12 @@ func GetSysProxy() (envs []corev1.EnvVar, err error) {
 		if strings.HasPrefix(env, "http") {
 			proxy, err := url.Parse(v)
 			if err != nil {
-				return nil, xerrors.Errorf(`value of environment variable "%s", %s is not invalid: %s`,
+				return nil, fmt.Errorf(`value of environment variable "%s", %s is not invalid: %s`,
 					env, v, err)
 			}
 
 			if net.ParseIP(proxy.Hostname()).IsLoopback() {
-				return nil, xerrors.Errorf(`proxy "%s=%s" is a loopback URL. can't work in Pods.'`, env, v)
+				return nil, fmt.Errorf(`proxy "%s=%s" is a loopback URL. can't work in Pods.'`, env, v)
 			}
 		}
 
