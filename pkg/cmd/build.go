@@ -25,11 +25,14 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/warm-metal/kubectl-dev/pkg/cmd/opts"
+	"github.com/warm-metal/kubectl-dev/pkg/kubectl"
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
+	"io/ioutil"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -37,15 +40,18 @@ import (
 type BuildOptions struct {
 	*opts.GlobalOptions
 
-	dockerfile  string
-	tag         string
-	localDir    string
-	targetStage string
-	noCache     bool
-	buildArgs   []string
-	push        bool
-	insecure    bool
-	platform    string
+	dockerfile     string
+	tag            string
+	autoTagPattern string
+	localDir       string
+	targetStage    string
+	noCache        bool
+	buildArgs      []string
+	push           bool
+	insecure       bool
+	platform       string
+	pathToManifest string
+	buildCtx       string
 
 	solveOpt buildkit.SolveOpt
 
@@ -57,7 +63,7 @@ func newBuilderOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStr
 		GlobalOptions: opts,
 		solveOpt: buildkit.SolveOpt{
 			Frontend:      "dockerfile.v0",
-			FrontendAttrs: make(map[string]string),
+			FrontendAttrs: map[string]string{},
 		},
 	}
 }
@@ -85,17 +91,17 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		o.solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
 	}
 
-	buildCtx := "."
+	o.buildCtx = "."
 	if len(args) > 0 {
-		buildCtx = args[0]
+		o.buildCtx = args[0]
 	}
 
-	if len(o.tag) == 0 && len(o.localDir) == 0 {
-		absCtx, err := filepath.Abs(buildCtx)
+	if len(o.tag) == 0 && len(o.localDir) == 0 && len(o.autoTagPattern) > 0 {
+		absCtx, err := filepath.Abs(o.buildCtx)
 		if err != nil {
 			return err
 		}
-		o.tag = fmt.Sprintf("build.local/x/%s:v0.0.0", filepath.Base(absCtx))
+		o.tag = fmt.Sprintf(o.autoTagPattern, filepath.Base(absCtx))
 		fmt.Printf("Neither image tag nor local binary is given. \nAssuming to build a local image for testing: %s\n", o.tag)
 	}
 
@@ -111,7 +117,6 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 			export.Attrs["push"] = "true"
 		}
 
-		// FIXME test if the target registry is insecure.
 		if o.insecure {
 			export.Attrs["registry.insecure"] = "true"
 		}
@@ -136,13 +141,13 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	dockerfile := o.dockerfile
 	if len(dockerfile) == 0 {
-		dockerfile = filepath.Join(buildCtx, "Dockerfile")
+		dockerfile = filepath.Join(o.buildCtx, "Dockerfile")
 	} else if !filepath.IsAbs(dockerfile) {
-		dockerfile = filepath.Join(buildCtx, dockerfile)
+		dockerfile = filepath.Join(o.buildCtx, dockerfile)
 	}
 
 	o.solveOpt.LocalDirs = map[string]string{
-		"context":    buildCtx,
+		"context":    o.buildCtx,
 		"dockerfile": filepath.Dir(dockerfile),
 	}
 
@@ -207,6 +212,32 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 
 	<-pw.Done()
 
+	if len(o.pathToManifest) > 0 {
+		manifest, err := ioutil.ReadFile(o.pathToManifest)
+		if err == os.ErrNotExist {
+			manifest, err = ioutil.ReadFile(filepath.Join(o.buildCtx, o.pathToManifest))
+		}
+
+		if err == nil {
+			fmt.Println("Applying manifests")
+			imagePattern := regexp.MustCompile(`(?m)image:.+$`)
+			match := imagePattern.FindAll(manifest, -1)
+			if len(match) > 1 {
+				fmt.Fprintf(os.Stderr, "More than one image found in manifest.\n")
+				return nil
+			}
+
+			if len(match) == 1 {
+				manifest = imagePattern.ReplaceAll(manifest, []byte(fmt.Sprintf("image: %s", o.tag)))
+			}
+
+			err = kubectl.ApplyManifestsFromStdin(strings.NewReader(string(manifest)))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error applying manifests: %s\n", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -224,6 +255,9 @@ kubectl dev build -t foo:latest -f Dockerfile .
 
 # Build a binary and save to a local directory.
 kubectl dev build -f Dockerfile --local foo/bar/ .
+
+# Build image then apply a manifest.
+kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 `,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -244,7 +278,9 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 	cmd.Flags().StringVarP(&o.dockerfile, "file", "f", "",
 		"Name of the Dockerfile (Default is 'PATH/Dockerfile')")
 	cmd.Flags().StringVarP(&o.tag, "tag", "t", "",
-		"Name and optionally a tag in the 'name:tag' format")
+		"Image name and optionally a tag in the 'name:tag' format")
+	cmd.Flags().StringVar(&o.autoTagPattern, "tag-pattern", "build.local/x/%s:latest",
+		"Pattern to generate image name if no tag is given")
 	cmd.Flags().StringVar(&o.localDir, "local", "",
 		"Build binaries instead an image and copy them to the specified path.")
 	cmd.Flags().StringVar(&o.targetStage, "target", "", "Set the target build stage to build.")
@@ -256,6 +292,8 @@ kubectl dev build -f Dockerfile --local foo/bar/ .
 	cmd.Flags().BoolVar(&o.push, "push", false, "Push the image.")
 	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
 	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
+	cmd.Flags().StringVar(&o.pathToManifest, "manifest", "hack/manifests/k8s.yaml",
+		"Path to the manifest to be applied after building.")
 
 	o.AddPersistentFlags(cmd.Flags())
 	return cmd

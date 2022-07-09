@@ -6,49 +6,8 @@ and **CliApp** especially in a single-node minikube cluster which is used to rep
 Currently, the plugin can only work on **containerd**.
 
 ## Features
-* Debug workloads or images,
-* Multi-arch image Builder for containerd, w/ host HTTP_PROXY settings,
-* [CliApp](https://github.com/warm-metal/cliapp#cliapp).
-
-## Installation
-
-### From Homebrew
-The Homebrew formulae is available for MacOS.
-
-```shell script
-brew install warm-metal/rc/kubectl-dev
-```
-
-### From the pre-built binary
-You can also download the pre-built binary.
-
-```shell script
-# For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.darwin-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
-
-# For Linux, run
-sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.linux-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
-```
-
-## Initialization
-After installed, run one of the commands below to install deps.
-```shell script
-# For minikube clusters
-kubectl dev prepare --minikube
-
-# Inherit current HTTP_PROXY in the buildkit workspace.
-# If you are in mainland China, this flag could accelerate the speed of image and dependency pulling while building.
-kubectl dev prepare --minikube --use-proxy
-
-# Install cliapp and set the environment variable to buildkit.
-kubectl dev prepare --builder-env GOPROXY='https://goproxy.cn|https://goproxy.io|direct'
-
-# For containerd
-kubectl dev prepare
-```
-
-## Usage
 ### Build image or binary
+#### docker build conformance
 
 The `kubectl-dev build` command is fully compatible to the `docker build` command.
 `no-cache`, `build-arg` and `target` are also supported.
@@ -61,14 +20,6 @@ kubectl dev build -t foo:bar
 kubectl dev build -t foo:bar -f foobar.dockerfile ~/image
 ```
 
-The build command also can copy artifacts from a stage to a local directory.
-
-```shell script
-# Build the stage mac-cli and copy generated to the local directory _output.
-kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
-```
-
-### Private image and insecure image registry
 The builder also support pushing private images and insecure registries.
 
 ```shell script
@@ -79,18 +30,31 @@ kubectl dev login
 kubectl dev build -t foo:bar --push --insecure
 ```
 
+#### build artifacts
+The build command also can copy artifacts from a complicated context to a local directory.
+
+```shell script
+# Build the stage mac-cli and copy generated to the local directory _output.
+kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
+```
+
+#### auto-generate image name for testing
+Build command will automatically generate image name if no `-t(--tag)` or `--local` provided.
+The default name is in the format of `build.local/x/%s:latest`.
+Users can change the default pattern by setting `--tag-pattern`.
+
 ### Debug workloads
 
-If an app failed, it would crash, wait for deps and has no responding, fails on some libraries, 
+If an app failed, it would crash, wait for deps and has no responding, fails on some libraries,
 say some .so files, or get wrong mounted ConfigMaps or Secrets.
 K8s provides nothing to figure them out. The only thing may help is logs your app printed.
 
 The `debug` command provides a new way to start the workload. It creates an identical Pod in the same namespace,
-except the image of the target container. `debug` opens a bash session after the Pod started. 
-The target image is mount to `/app-root`. 
+except the image of the target container. `debug` opens a bash session after the Pod started.
+The target image is mount to `/app-root`.
 You can check the original image context or debug the binary in the opened session.
 
-Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, and Pod are all supported. 
+Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob, and Pod are all supported.
 
 ```shell script
 # Debug a running or failed workload. Run the same command again could open a new session to the same debugger.
@@ -146,6 +110,43 @@ sudo -E kubectl dev app install --name ctr \
 	--dockerfile https://raw.githubusercontent.com/warm-metal/cliapps/master/ctr/Dockerfile \
 	--env CONTAINERD_NAMESPACE=k8s.io \
 	--hostpath /var/run/containerd/containerd.sock --use-proxy
+```
+
+## Installation
+
+### From Homebrew
+The Homebrew formulae is available for MacOS.
+
+```shell script
+brew install warm-metal/rc/kubectl-dev
+```
+
+### From the pre-built binary
+You can also download the pre-built binary.
+
+```shell script
+# For MacOS, the administrator privilege is required to save kubectl-dev to /usr/local/bin. Run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.darwin-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
+
+# For Linux, run
+sudo sh -c 'curl -skL https://github.com/warm-metal/kubectl-dev/releases/download/v0.4.0/kubectl-dev.linux-amd64.tpxz | tar -C /usr/local/bin/ -xpf -'
+```
+
+## Initialization
+After installed, run one of the commands below to install deps.
+```shell script
+# For minikube clusters
+kubectl dev prepare --minikube
+
+# Inherit current HTTP_PROXY in the buildkit workspace.
+# If you are in mainland China, this flag could accelerate the speed of image and dependency pulling while building.
+kubectl dev prepare --minikube --use-proxy
+
+# Install cliapp and set the environment variable to buildkit.
+kubectl dev prepare --builder-env GOPROXY='https://goproxy.cn|https://goproxy.io|direct'
+
+# For containerd
+kubectl dev prepare
 ```
 
 ## Build from Source
