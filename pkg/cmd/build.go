@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/warm-metal/kubectl-dev/pkg/conf"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -38,36 +39,162 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
+const (
+	buildConfFile      = "build"
+	defaultDockerfile  = ""
+	defaultTag         = ""
+	defaultLocalDir    = ""
+	defaultTargetStage = ""
+	defaultPlatform    = ""
+)
+
+type BuildContext struct {
+	Dockerfile     string `yaml:"dockerfile,omitempty"`
+	Tag            string `yaml:"tag,omitempty"`
+	AutoTagPattern string `yaml:"auto_tag_pattern,omitempty"`
+	LocalDir       string `yaml:"local_dir,omitempty"`
+	TargetStage    string `yaml:"target_stage,omitempty"`
+	Platform       string `yaml:"platform,omitempty"`
+
+	PathToManifest  string `yaml:"path_to_manifest,omitempty"`
+	BuildContextDir string `yaml:"build_context_dir,omitempty"`
+
+	solveOpt *buildkit.SolveOpt `yaml:"-"`
+}
+
+func (c BuildContext) isDefault() bool {
+	return c.Dockerfile == defaultDockerfile && c.Tag == defaultTag &&
+		c.LocalDir == defaultLocalDir && c.TargetStage == defaultTargetStage &&
+		c.Platform == defaultPlatform
+}
+
+// mapping from dockerfile+stage to BuildContext
+type DirBuildContext map[string]BuildContext
+
+// mapping from build directory to DirBuildContext
+type BuildConfig map[string]DirBuildContext
+
 type BuildOptions struct {
 	*opts.GlobalOptions
 
-	dockerfile     string
-	tag            string
-	autoTagPattern string
-	localDir       string
-	targetStage    string
-	noCache        bool
-	buildArgs      []string
-	push           bool
-	insecure       bool
-	platform       string
-	pathToManifest string
-	buildCtx       string
-	noProxy        bool
+	BuildContext
+	noCache   bool
+	buildArgs []string
+	push      bool
+	insecure  bool
+	noProxy   bool
 
-	solveOpt buildkit.SolveOpt
+	solveOpt *buildkit.SolveOpt
 
 	buildkitAddrs []string
+
+	config DirBuildContext
 }
 
 func newBuilderOptions(opts *opts.GlobalOptions, streams genericclioptions.IOStreams) *BuildOptions {
 	return &BuildOptions{
 		GlobalOptions: opts,
-		solveOpt: buildkit.SolveOpt{
-			Frontend:      "dockerfile.v0",
-			FrontendAttrs: map[string]string{},
-		},
 	}
+}
+
+func (o *BuildOptions) buildSolveOpt(bc *BuildContext) (*buildkit.SolveOpt, error) {
+	solveOpt := buildkit.SolveOpt{
+		Frontend:      "dockerfile.v0",
+		FrontendAttrs: map[string]string{},
+	}
+
+	for _, buildArg := range o.buildArgs {
+		kv := strings.SplitN(buildArg, "=", 2)
+		if len(kv) != 2 {
+			return nil, errors.Errorf("invalid --build-arg value %s", buildArg)
+		}
+
+		solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
+	}
+
+	if len(bc.Tag) == 0 && len(bc.LocalDir) == 0 && len(bc.AutoTagPattern) > 0 {
+		absCtx, err := filepath.Abs(bc.BuildContextDir)
+		if err != nil {
+			return nil, err
+		}
+		bc.Tag = fmt.Sprintf(bc.AutoTagPattern, filepath.Base(absCtx))
+		fmt.Printf("Neither image tag nor local binary is given. \nAssuming to build a local image for testing: %s\n", bc.Tag)
+	}
+
+	if len(bc.Tag) > 0 {
+		export := buildkit.ExportEntry{
+			Type: "image",
+			Attrs: map[string]string{
+				"name": bc.Tag,
+			},
+		}
+
+		if o.push {
+			export.Attrs["push"] = "true"
+		}
+
+		if o.insecure {
+			export.Attrs["registry.insecure"] = "true"
+		}
+
+		solveOpt.Exports = append(solveOpt.Exports, export)
+	}
+
+	if len(bc.LocalDir) > 0 {
+		solveOpt.Exports = append(solveOpt.Exports, buildkit.ExportEntry{
+			Type: "local",
+			Attrs: map[string]string{
+				"dest": bc.LocalDir,
+			},
+			OutputDir: bc.LocalDir,
+		})
+	}
+
+	if u, err := url.Parse(bc.Dockerfile); err == nil && strings.HasPrefix(u.Scheme, "http") {
+		solveOpt.FrontendAttrs["context"] = bc.Dockerfile
+		return &solveOpt, nil
+	}
+
+	dockerfile := bc.Dockerfile
+	if len(dockerfile) == 0 {
+		dockerfile = filepath.Join(bc.BuildContextDir, "Dockerfile")
+	} else if !filepath.IsAbs(dockerfile) {
+		dockerfile = filepath.Join(bc.BuildContextDir, dockerfile)
+	}
+
+	solveOpt.LocalDirs = map[string]string{
+		"context":    bc.BuildContextDir,
+		"dockerfile": filepath.Dir(dockerfile),
+	}
+
+	solveOpt.FrontendAttrs["filename"] = filepath.Base(dockerfile)
+
+	if len(bc.TargetStage) > 0 {
+		solveOpt.FrontendAttrs["target"] = bc.TargetStage
+	}
+
+	if o.noCache {
+		solveOpt.FrontendAttrs["no-cache"] = ""
+	}
+
+	if len(bc.Platform) > 0 {
+		solveOpt.FrontendAttrs["platform"] = bc.Platform
+	}
+
+	if !o.noProxy {
+		const buildArgPrefix = "build-arg:"
+		proxies, err := utils.GetSysProxy()
+		if err == nil {
+			for _, proxy := range proxies {
+				solveOpt.FrontendAttrs[buildArgPrefix+proxy.Name] = proxy.Value
+			}
+		} else {
+			fmt.Println(err.Error())
+		}
+	}
+
+	solveOpt.Session = []session.Attachable{authprovider.NewDockerAuthProvider(os.Stderr)}
+	return &solveOpt, nil
 }
 
 func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
@@ -84,106 +211,77 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	for _, buildArg := range o.buildArgs {
-		kv := strings.SplitN(buildArg, "=", 2)
-		if len(kv) != 2 {
-			return errors.Errorf("invalid --build-arg value %s", buildArg)
-		}
-
-		o.solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
-	}
-
-	o.buildCtx = "."
-	if len(args) > 0 {
-		o.buildCtx = args[0]
-	}
-
-	if len(o.tag) == 0 && len(o.localDir) == 0 && len(o.autoTagPattern) > 0 {
-		absCtx, err := filepath.Abs(o.buildCtx)
+	if o.BuildContext.isDefault() {
+		config := make(BuildConfig)
+		workdir, err := os.Getwd()
 		if err != nil {
 			return err
 		}
-		o.tag = fmt.Sprintf(o.autoTagPattern, filepath.Base(absCtx))
-		fmt.Printf("Neither image tag nor local binary is given. \nAssuming to build a local image for testing: %s\n", o.tag)
-	}
 
-	if len(o.tag) > 0 {
-		export := buildkit.ExportEntry{
-			Type: "image",
-			Attrs: map[string]string{
-				"name": o.tag,
-			},
-		}
-
-		if o.push {
-			export.Attrs["push"] = "true"
-		}
-
-		if o.insecure {
-			export.Attrs["registry.insecure"] = "true"
-		}
-
-		o.solveOpt.Exports = append(o.solveOpt.Exports, export)
-	}
-
-	if len(o.localDir) > 0 {
-		o.solveOpt.Exports = append(o.solveOpt.Exports, buildkit.ExportEntry{
-			Type: "local",
-			Attrs: map[string]string{
-				"dest": o.localDir,
-			},
-			OutputDir: o.localDir,
-		})
-	}
-
-	if u, err := url.Parse(o.dockerfile); err == nil && strings.HasPrefix(u.Scheme, "http") {
-		o.solveOpt.FrontendAttrs["context"] = o.dockerfile
-		return nil
-	}
-
-	dockerfile := o.dockerfile
-	if len(dockerfile) == 0 {
-		dockerfile = filepath.Join(o.buildCtx, "Dockerfile")
-	} else if !filepath.IsAbs(dockerfile) {
-		dockerfile = filepath.Join(o.buildCtx, dockerfile)
-	}
-
-	o.solveOpt.LocalDirs = map[string]string{
-		"context":    o.buildCtx,
-		"dockerfile": filepath.Dir(dockerfile),
-	}
-
-	o.solveOpt.FrontendAttrs["filename"] = filepath.Base(dockerfile)
-
-	if len(o.targetStage) > 0 {
-		o.solveOpt.FrontendAttrs["target"] = o.targetStage
-	}
-
-	if o.noCache {
-		o.solveOpt.FrontendAttrs["no-cache"] = ""
-	}
-
-	if len(o.platform) > 0 {
-		o.solveOpt.FrontendAttrs["platform"] = o.platform
-	}
-
-	if !o.noProxy {
-		const buildArgPrefix = "build-arg:"
-		proxies, err := utils.GetSysProxy()
-		if err == nil {
-			for _, proxy := range proxies {
-				o.solveOpt.FrontendAttrs[buildArgPrefix+proxy.Name] = proxy.Value
+		if err = conf.Load(buildConfFile, &config); err == nil {
+			o.config = config[workdir]
+			for k := range o.config {
+				bc := o.config[k]
+				bc.solveOpt, err = o.buildSolveOpt(&bc)
+				if err != nil {
+					return err
+				}
+				o.config[k] = bc
 			}
-		} else {
-			fmt.Println(err.Error())
+		}
+	} else {
+		o.BuildContextDir = "."
+		if len(args) > 0 {
+			o.BuildContextDir = args[0]
+		}
+
+		if o.solveOpt, err = o.buildSolveOpt(&o.BuildContext); err != nil {
+			return err
 		}
 	}
 
-	o.solveOpt.Session = []session.Attachable{authprovider.NewDockerAuthProvider(os.Stderr)}
 	return nil
 }
 
 func (o *BuildOptions) Validate() error {
+	return nil
+}
+
+func solve(
+	ctx context.Context, client *buildkit.Client, pw progresswriter.Writer,
+	solveOpt *buildkit.SolveOpt, config *BuildContext,
+) error {
+	if _, err := client.Solve(ctx, nil, *solveOpt, pw.Status()); err != nil {
+		<-pw.Done()
+		return fmt.Errorf("%s", err)
+	}
+
+	if len(config.PathToManifest) > 0 {
+		manifest, err := ioutil.ReadFile(config.PathToManifest)
+		if err == os.ErrNotExist {
+			manifest, err = ioutil.ReadFile(filepath.Join(config.BuildContextDir, config.PathToManifest))
+		}
+
+		if err == nil {
+			fmt.Println("Applying manifests")
+			imagePattern := regexp.MustCompile(`(?m)image:.+$`)
+			match := imagePattern.FindAll(manifest, -1)
+			if len(match) > 1 {
+				fmt.Fprintf(os.Stderr, "More than one image found in manifest.\n")
+				return nil
+			}
+
+			if len(match) == 1 {
+				manifest = imagePattern.ReplaceAll(manifest, []byte(fmt.Sprintf("image: %s", config.Tag)))
+			}
+
+			err = kubectl.ApplyManifestsFromStdin(strings.NewReader(string(manifest)))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error applying manifests: %s\n", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -219,36 +317,34 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 		return fmt.Errorf("can't initialize progress writer: %s", err)
 	}
 
-	if _, err = client.Solve(ctx, nil, o.solveOpt, pw.Status()); err != nil {
-		<-pw.Done()
-		return fmt.Errorf("%s", err)
+	if o.config != nil {
+		for _, config := range o.config {
+			if err = solve(ctx, client, pw, config.solveOpt, &config); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err = solve(ctx, client, pw, o.solveOpt, &o.BuildContext); err != nil {
+			return err
+		}
 	}
 
 	<-pw.Done()
 
-	if len(o.pathToManifest) > 0 {
-		manifest, err := ioutil.ReadFile(o.pathToManifest)
-		if err == os.ErrNotExist {
-			manifest, err = ioutil.ReadFile(filepath.Join(o.buildCtx, o.pathToManifest))
+	if o.config == nil {
+		config := make(BuildConfig)
+		workdir, err := os.Getwd()
+		if err != nil {
+			return err
 		}
-
-		if err == nil {
-			fmt.Println("Applying manifests")
-			imagePattern := regexp.MustCompile(`(?m)image:.+$`)
-			match := imagePattern.FindAll(manifest, -1)
-			if len(match) > 1 {
-				fmt.Fprintf(os.Stderr, "More than one image found in manifest.\n")
-				return nil
-			}
-
-			if len(match) == 1 {
-				manifest = imagePattern.ReplaceAll(manifest, []byte(fmt.Sprintf("image: %s", o.tag)))
-			}
-
-			err = kubectl.ApplyManifestsFromStdin(strings.NewReader(string(manifest)))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error applying manifests: %s\n", err)
-			}
+		if err = conf.Load(buildConfFile, &config); err == nil {
+			return err
+		}
+		config[workdir] = DirBuildContext{
+			o.Dockerfile + "/" + o.TargetStage: o.BuildContext,
+		}
+		if err = conf.Save(buildConfFile, config); err != nil {
+			return err
 		}
 	}
 
@@ -289,15 +385,15 @@ kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 		},
 	}
 
-	cmd.Flags().StringVarP(&o.dockerfile, "file", "f", "",
+	cmd.Flags().StringVarP(&o.Dockerfile, "file", "f", defaultDockerfile,
 		"Name of the Dockerfile (Default is 'PATH/Dockerfile')")
-	cmd.Flags().StringVarP(&o.tag, "tag", "t", "",
+	cmd.Flags().StringVarP(&o.Tag, "tag", "t", defaultTag,
 		"Image name and optionally a tag in the 'name:tag' format")
-	cmd.Flags().StringVar(&o.autoTagPattern, "tag-pattern", "build.local/x/%s:latest",
+	cmd.Flags().StringVar(&o.AutoTagPattern, "tag-pattern", "build.local/x/%s:latest",
 		"Pattern to generate image name if no tag is given")
-	cmd.Flags().StringVar(&o.localDir, "local", "",
+	cmd.Flags().StringVar(&o.LocalDir, "local", defaultLocalDir,
 		"Build binaries instead an image and copy them to the specified path.")
-	cmd.Flags().StringVar(&o.targetStage, "target", "", "Set the target build stage to build.")
+	cmd.Flags().StringVar(&o.TargetStage, "target", defaultTargetStage, "Set the target build stage to build.")
 	cmd.Flags().BoolVar(&o.noCache, "no-cache", false, "Do not use cache when building.")
 	cmd.Flags().StringSliceVar(&o.buildArgs, "build-arg", nil, "Set build-time variables.")
 	cmd.Flags().StringSliceVar(&o.buildkitAddrs, "buildkit-addr", nil,
@@ -305,8 +401,8 @@ kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 			"automatically fetch them from the cluster")
 	cmd.Flags().BoolVar(&o.push, "push", false, "Push the image.")
 	cmd.Flags().BoolVar(&o.insecure, "insecure", false, "Enable if the target registry is insecure.")
-	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
-	cmd.Flags().StringVar(&o.pathToManifest, "manifest", "hack/manifests/k8s.yaml",
+	cmd.Flags().StringVar(&o.Platform, "platform", defaultPlatform, "Set target platform for build.")
+	cmd.Flags().StringVar(&o.PathToManifest, "manifest", "hack/manifests/k8s.yaml",
 		"Path to the manifest to be applied after building.")
 	cmd.Flags().BoolVar(&o.noProxy, "no-proxy", false, "Do not pass through local proxy configuration when building.")
 

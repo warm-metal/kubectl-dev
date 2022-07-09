@@ -7,7 +7,7 @@ Currently, the plugin can only work on **containerd**.
 
 ## Features
 ### Build image or binary
-#### docker build conformance
+#### Docker build conformance
 
 The `kubectl-dev build` command is fully compatible to the `docker build` command.
 `no-cache`, `build-arg` and `target` are also supported.
@@ -30,7 +30,7 @@ kubectl dev login
 kubectl dev build -t foo:bar --push --insecure
 ```
 
-#### build artifacts
+#### Build artifacts
 The build command also can copy artifacts from a complicated context to a local directory.
 
 ```shell script
@@ -38,10 +38,18 @@ The build command also can copy artifacts from a complicated context to a local 
 kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
 ```
 
-#### auto-generate image name for testing
+#### Auto-generate image name for testing
 Build command will automatically generate image name if no `-t(--tag)` or `--local` provided.
 The default name is in the format of `build.local/x/%s:latest`.
 Users can change the default pattern by setting `--tag-pattern`.
+
+#### Apply k8s manifests after build
+You can specify a k8s manifest file through `--manifest` to apply after build.
+Its image configuration will be updated with the built image name.
+
+#### Remember arguments for replaying
+Once you've built an image in some directory, all command line arguments are saved.
+You can build the same image in the same directory with just `kubectl dev build` command.
 
 ### Debug workloads
 
