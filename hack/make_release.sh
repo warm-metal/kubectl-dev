@@ -3,8 +3,8 @@
 set -e
 set -x
 
-[[ $# -lt 1 ]] && echo "version to be relased is required" && exit 2
-[[ ! "$1" =~ ^v[0-9].[0-9].[0-9]$ ]] && echo "version must be in the from of v0.0.0" && exit 2
+[[ $# -lt 1 ]] && echo "version to be released is required" && exit 2
+[[ ! "$1" =~ ^v[0-9].[0-9].[0-9]$ ]] && echo "version must be in the form of v0.0.0" && exit 2
 
 VERSION=$1
 TAG=$1
