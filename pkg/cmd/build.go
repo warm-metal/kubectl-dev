@@ -18,6 +18,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
 	buildkit "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -29,12 +36,6 @@ import (
 	"github.com/warm-metal/kubectl-dev/pkg/utils"
 	"io/ioutil"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"net/url"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
 )
 
 type BuildOptions struct {
@@ -52,6 +53,7 @@ type BuildOptions struct {
 	platform       string
 	pathToManifest string
 	buildCtx       string
+	noProxy        bool
 
 	solveOpt buildkit.SolveOpt
 
@@ -163,6 +165,18 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 
 	if len(o.platform) > 0 {
 		o.solveOpt.FrontendAttrs["platform"] = o.platform
+	}
+
+	if !o.noProxy {
+		const buildArgPrefix = "build-arg:"
+		proxies, err := utils.GetSysProxy()
+		if err == nil {
+			for _, proxy := range proxies {
+				o.solveOpt.FrontendAttrs[buildArgPrefix+proxy.Name] = proxy.Value
+			}
+		} else {
+			fmt.Println(err.Error())
+		}
 	}
 
 	o.solveOpt.Session = []session.Attachable{authprovider.NewDockerAuthProvider(os.Stderr)}
@@ -294,6 +308,7 @@ kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 	cmd.Flags().StringVar(&o.platform, "platform", "", "Set target platform for build.")
 	cmd.Flags().StringVar(&o.pathToManifest, "manifest", "hack/manifests/k8s.yaml",
 		"Path to the manifest to be applied after building.")
+	cmd.Flags().BoolVar(&o.noProxy, "no-proxy", false, "Do not pass through local proxy configuration when building.")
 
 	o.AddPersistentFlags(cmd.Flags())
 	return cmd
