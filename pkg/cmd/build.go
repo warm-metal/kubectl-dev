@@ -59,6 +59,8 @@ type BuildContext struct {
 	PathToManifest  string `yaml:"path_to_manifest,omitempty"`
 	BuildContextDir string `yaml:"build_context_dir,omitempty"`
 
+	Count int `yaml:"count"`
+
 	solveOpt *buildkit.SolveOpt `yaml:"-"`
 }
 
@@ -112,20 +114,21 @@ func (o *BuildOptions) buildSolveOpt(bc *BuildContext) (*buildkit.SolveOpt, erro
 		solveOpt.FrontendAttrs["build-arg:"+kv[0]] = kv[1]
 	}
 
+	tag := bc.Tag
 	if len(bc.Tag) == 0 && len(bc.LocalDir) == 0 && len(bc.AutoTagPattern) > 0 {
 		absCtx, err := filepath.Abs(bc.BuildContextDir)
 		if err != nil {
 			return nil, err
 		}
-		bc.Tag = fmt.Sprintf(bc.AutoTagPattern, filepath.Base(absCtx))
+		tag = fmt.Sprintf(bc.AutoTagPattern, filepath.Base(absCtx), bc.Count)
 		fmt.Printf("Neither image tag nor local binary is given. \nAssuming to build a local image for testing: %s\n", bc.Tag)
 	}
 
-	if len(bc.Tag) > 0 {
+	if len(tag) > 0 {
 		export := buildkit.ExportEntry{
 			Type: "image",
 			Attrs: map[string]string{
-				"name": bc.Tag,
+				"name": tag,
 			},
 		}
 
@@ -228,6 +231,8 @@ func (o *BuildOptions) Complete(cmd *cobra.Command, args []string) error {
 				}
 				o.config[k] = bc
 			}
+		} else {
+			return errors.New("more arguments are required")
 		}
 	} else {
 		o.BuildContextDir = "."
@@ -251,10 +256,13 @@ func solve(
 	ctx context.Context, client *buildkit.Client, pw progresswriter.Writer,
 	solveOpt *buildkit.SolveOpt, config *BuildContext,
 ) error {
-	if _, err := client.Solve(ctx, nil, *solveOpt, pw.Status()); err != nil {
+	_, err := client.Solve(ctx, nil, *solveOpt, pw.Status())
+	if err != nil {
 		<-pw.Done()
 		return fmt.Errorf("%s", err)
 	}
+
+	config.Count++
 
 	if len(config.PathToManifest) > 0 {
 		manifest, err := ioutil.ReadFile(config.PathToManifest)
@@ -272,7 +280,13 @@ func solve(
 			}
 
 			if len(match) == 1 {
-				manifest = imagePattern.ReplaceAll(manifest, []byte(fmt.Sprintf("image: %s", config.Tag)))
+				image := ""
+				for _, export := range solveOpt.Exports {
+					if export.Type == "image" {
+						image = export.Attrs["name"]
+					}
+				}
+				manifest = imagePattern.ReplaceAll(manifest, []byte(fmt.Sprintf("image: %s", image)))
 			}
 
 			err = kubectl.ApplyManifestsFromStdin(strings.NewReader(string(manifest)))
@@ -331,21 +345,19 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 
 	<-pw.Done()
 
-	if o.config == nil {
-		config := make(BuildConfig)
-		workdir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		if err = conf.Load(buildConfFile, &config); err == nil {
-			return err
-		}
-		config[workdir] = DirBuildContext{
-			o.Dockerfile + "/" + o.TargetStage: o.BuildContext,
-		}
-		if err = conf.Save(buildConfFile, config); err != nil {
-			return err
-		}
+	config := make(BuildConfig)
+	workdir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err = conf.Load(buildConfFile, &config); err == nil {
+		return err
+	}
+	config[workdir] = DirBuildContext{
+		o.Dockerfile + "/" + o.TargetStage: o.BuildContext,
+	}
+	if err = conf.Save(buildConfFile, config); err != nil {
+		return err
 	}
 
 	return nil
@@ -389,7 +401,7 @@ kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 		"Name of the Dockerfile (Default is 'PATH/Dockerfile')")
 	cmd.Flags().StringVarP(&o.Tag, "tag", "t", defaultTag,
 		"Image name and optionally a tag in the 'name:tag' format")
-	cmd.Flags().StringVar(&o.AutoTagPattern, "tag-pattern", "build.local/x/%s:latest",
+	cmd.Flags().StringVar(&o.AutoTagPattern, "tag-pattern", "build.local/x/%s:v%d",
 		"Pattern to generate image name if no tag is given")
 	cmd.Flags().StringVar(&o.LocalDir, "local", defaultLocalDir,
 		"Build binaries instead an image and copy them to the specified path.")

@@ -40,7 +40,10 @@ kubectl dev build  -f hack/dev/Dockerfile --local _output/ --target mac-cli
 
 #### Auto-generate image name for testing
 Build command will automatically generate image name if no `-t(--tag)` or `--local` provided.
-The default name is in the format of `build.local/x/%s:latest`.
+The default name is in the format of `build.local/x/%s:v%d`.
+The %s is going to be replaced by the build context directory.
+The %d will be replaced by an integer incremented by 1 in each build.
+
 Users can change the default pattern by setting `--tag-pattern`.
 
 #### Apply k8s manifests after build
