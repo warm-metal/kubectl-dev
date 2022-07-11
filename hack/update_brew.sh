@@ -3,9 +3,21 @@
 set -e
 set -x
 
-BRANCH=$(git branch --show-current)
+[[ $# -lt 1 ]] && echo "version to be released is required" && exit 2
+[[ ! "$1" =~ ^v[0-9].[0-9].[0-9]$ ]] && echo "version must be in the form of v0.0.0" && exit 2
+
+VERSION=$1
+TAG=$1
+BRANCH=${VERSION:1:${#VERSION}-2}0
+
+if [[ $(git branch -l ${BRANCH}) == "" ]]; then
+  echo "branch ${BRANCH} not found"
+  exit 1
+else
+  git checkout ${BRANCH}
+fi
+
 COMMIT=$(git rev-parse ${BRANCH})
-VERSION=v${BRANCH}
 
 [[ ! "${VERSION}" =~ ^v[0-9].[0-9].[0-9]$ ]] && echo "You must checkout the version branch" && exit 2
 
