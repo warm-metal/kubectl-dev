@@ -49,12 +49,13 @@ const (
 )
 
 type BuildContext struct {
-	Dockerfile     string `yaml:"dockerfile,omitempty"`
-	Tag            string `yaml:"tag,omitempty"`
-	AutoTagPattern string `yaml:"auto_tag_pattern,omitempty"`
-	LocalDir       string `yaml:"local_dir,omitempty"`
-	TargetStage    string `yaml:"target_stage,omitempty"`
-	Platform       string `yaml:"platform,omitempty"`
+	Dockerfile     string   `yaml:"dockerfile,omitempty"`
+	Tag            string   `yaml:"tag,omitempty"`
+	AutoTagPattern string   `yaml:"auto_tag_pattern,omitempty"`
+	LocalDir       string   `yaml:"local_dir,omitempty"`
+	TargetStage    string   `yaml:"target_stage,omitempty"`
+	Platform       string   `yaml:"platform,omitempty"`
+	BuildArgs      []string `yaml:"build_args,omitempty"`
 
 	PathToManifest  string `yaml:"path_to_manifest,omitempty"`
 	BuildContextDir string `yaml:"build_context_dir,omitempty"`
@@ -80,11 +81,10 @@ type BuildOptions struct {
 	*opts.GlobalOptions
 
 	BuildContext
-	noCache   bool
-	buildArgs []string
-	push      bool
-	insecure  bool
-	noProxy   bool
+	noCache  bool
+	push     bool
+	insecure bool
+	noProxy  bool
 
 	solveOpt *buildkit.SolveOpt
 
@@ -105,7 +105,7 @@ func (o *BuildOptions) buildSolveOpt(bc *BuildContext) (*buildkit.SolveOpt, erro
 		FrontendAttrs: map[string]string{},
 	}
 
-	for _, buildArg := range o.buildArgs {
+	for _, buildArg := range bc.BuildArgs {
 		kv := strings.SplitN(buildArg, "=", 2)
 		if len(kv) != 2 {
 			return nil, errors.Errorf("invalid --build-arg value %s", buildArg)
@@ -332,10 +332,12 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 	}
 
 	if o.config != nil {
-		for _, config := range o.config {
+		for key := range o.config {
+			config := o.config[key]
 			if err = solve(ctx, client, pw, config.solveOpt, &config); err != nil {
 				return err
 			}
+			o.config[key] = config
 		}
 	} else {
 		if err = solve(ctx, client, pw, o.solveOpt, &o.BuildContext); err != nil {
@@ -350,12 +352,20 @@ func (o *BuildOptions) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	if err = conf.Load(buildConfFile, &config); err == nil {
-		return err
+
+	// Ignore io errors as the file may not exist
+	conf.Load(buildConfFile, &config)
+
+	if o.config != nil {
+		config[workdir] = o.config
+	} else {
+		if config[workdir] == nil {
+			config[workdir] = make(DirBuildContext, 1)
+		}
+		config[workdir][o.Dockerfile+"/"+o.TargetStage] = o.BuildContext
 	}
-	config[workdir] = DirBuildContext{
-		o.Dockerfile + "/" + o.TargetStage: o.BuildContext,
-	}
+
+	fmt.Fprintf(os.Stdout, "Saving configuration %#v\n", config)
 	if err = conf.Save(buildConfFile, config); err != nil {
 		return err
 	}
@@ -407,7 +417,7 @@ kubectl dev build -t foo:latest -f Dockerfile --manifest foo/bar/manifest.yaml
 		"Build binaries instead an image and copy them to the specified path.")
 	cmd.Flags().StringVar(&o.TargetStage, "target", defaultTargetStage, "Set the target build stage to build.")
 	cmd.Flags().BoolVar(&o.noCache, "no-cache", false, "Do not use cache when building.")
-	cmd.Flags().StringSliceVar(&o.buildArgs, "build-arg", nil, "Set build-time variables.")
+	cmd.Flags().StringSliceVar(&o.BuildArgs, "build-arg", nil, "Set build-time variables.")
 	cmd.Flags().StringSliceVar(&o.buildkitAddrs, "buildkit-addr", nil,
 		"Endpoints of the buildkitd. Must be a valid tcp or unix socket URL(tcp:// or unix://). If not set, "+
 			"automatically fetch them from the cluster")
